@@ -1,0 +1,32 @@
+{
+  "destination": "qor1gtcwzywp2czm6kse5gukuc8jx8fc5nma9xkdjy",
+  "balanceUqor": "0",
+  "poolUqor": "1000000",
+  "batch": {
+    "rollupId": "veil-pay-1",
+    "batchIndex": 1,
+    "stateRoot": "40dd6411e0bef008889fdf730706e5eade24205604f33c1680f181eac148e02b",
+    "prevStateRoot": "03a597edc173caf8a4b63400382a6d50ca0797db45ac1b2d212153c28c32742e",
+    "txCount": 1,
+    "dataHash": "369fe67f03128f459a66c8b96ec8d1d208f40e35d245f50179814926f71e4e78",
+    "proofType": "fraud",
+    "status": "finalized",
+    "submittedAt": 10313344,
+    "finalizedAt": 10315867,
+    "withdrawalsRoot": "926491cd7f244c47b7693a895a2167d7d70c93f9c9bb26b92908aacdafc82a6c",
+    "withdrawalsBound": true,
+    "submittedTime": 1795001861,
+    "inboxStart": 3,
+    "inboxEnd": 4,
+    "withdrawalsRootReduced": false
+  },
+  "checks": {
+    "rollupLayerBinding": true,
+    "batchStateRoot": true,
+    "anchorOnChain": true,
+    "creatorAuthority": true,
+    "pqcSignature": true,
+    "chainBinding": true
+  },
+  "proof": []
+}

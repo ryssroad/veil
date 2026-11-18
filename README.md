@@ -2,7 +2,7 @@
 
 Veil links a public qledger-v1 payment on QoreChain Diana to a signed invoice sealed for the recipient and auditor. The first experiment transferred **0.25 test QOR** in batch 0 of `veil-pay-1`.
 
-[Отчёт о проверке на Diana](./DIANA-2026-11-18.md) · [Payment transaction](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/010AB8E43A327097C6C1E71A2626917B84E8AF87F369F4271F3264BDF8CDB268) · [Live batch](https://api-testnet.qore.host/qorechain/rdk/v1/batch/veil-pay-1/0) · [Protocol discussions](https://github.com/ryssroad/veil/issues)
+[Вывод на L1 и данные для воспроизведения](./evidence/withdrawal/RESULT.md) · [Отчёт о проверке на Diana](./DIANA-2026-11-18.md) · [Payment transaction](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/010AB8E43A327097C6C1E71A2626917B84E8AF87F369F4271F3264BDF8CDB268) · [Live batch](https://api-testnet.qore.host/qorechain/rdk/v1/batch/veil-pay-1/0) · [Protocol discussions](https://github.com/ryssroad/veil/issues)
 
 ## Verify the payment
 
@@ -26,7 +26,7 @@ To check a saved receipt supply `--receipt evidence/receipt.json`. The optional 
 
 The payer signs the exact invoice bytes and a reference to the signed L2 transfer using ML-DSA-44. The reference binds the chain ID, rollup ID and transfer digest. QoreSeal encrypts the signed invoice to two ML-KEM-1024 keys. The operator posts the transfer and the envelope in one Cosmos transaction. The invoice author is authenticated independently of the L1 poster.
 
-This verifier covers the first batch of this rollup. The reader keys were provisioned on one test machine and the three inbox entries are publicly recoverable from an indexed Diana endpoint. qledger payment IDs, amounts, posting metadata and balances are public. Receipt verification trusts the configured Diana node for chain state. Separate participant devices, authenticated reader-key discovery, later batches, rollbacks and withdrawals are tracked in Issues.
+This verifier covers the first batch of this rollup. The reader keys were provisioned on one test machine and the three inbox entries are publicly recoverable from an indexed Diana endpoint. qledger payment IDs, amounts, posting metadata and balances are public. Receipt verification trusts the configured Diana node for chain state. Separate participant devices, authenticated reader-key discovery, general batch monitoring and rollbacks are tracked in Issues. The first finalized withdrawal has its own replay transcript and verifier linked above.
 
 The operator scripts record the one-time experiment. Running the read-only verifier never requires an operator mnemonic. RDK 0.9.0 implements qledger, commitments, batch planning and receipt verification. QoreSeal 0.1.0 implements the envelope, the QoreChain SDK signs native transactions, and noble-post-quantum signs the invoice.
 

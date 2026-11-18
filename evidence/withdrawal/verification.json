@@ -1,0 +1,45 @@
+{
+  "chainId": "qorechain-diana",
+  "rollupId": "veil-pay-1",
+  "recipient": "qor1gtcwzywp2czm6kse5gukuc8jx8fc5nma9xkdjy",
+  "feePayer": "qor1a5j8wjpxpqc6f7htyv92042nrt7gaegpezdhx4",
+  "claimHash": "AB6F83B99E5CD0EAC1FEC0B1C927ED1C2EBB97C871C1A6FF40DE2536E13625E1",
+  "claimTime": "2026-11-18T12:38:41Z",
+  "before": {
+    "height": 10315908,
+    "recipientUqor": "0",
+    "poolUqor": "1000000"
+  },
+  "after": {
+    "height": 10315909,
+    "recipientUqor": "250000",
+    "poolUqor": "750000"
+  },
+  "bankTransfer": {
+    "type": "transfer",
+    "recipient": "qor1gtcwzywp2czm6kse5gukuc8jx8fc5nma9xkdjy",
+    "sender": "qor1qadyq99h5qtkhumcjsejh8nanfshltv3zghqsd",
+    "amount": "250000uqor",
+    "msg_index": "0"
+  },
+  "withdrawalEvent": {
+    "type": "rdk_withdrawal_executed",
+    "rollup_id": "veil-pay-1",
+    "batch_index": "1",
+    "withdrawal_index": "0",
+    "recipient": "qor1gtcwzywp2czm6kse5gukuc8jx8fc5nma9xkdjy",
+    "amount": "250000uqor",
+    "msg_index": "0"
+  },
+  "batchStatus": "finalized",
+  "finalizedAt": 10315867,
+  "receiptValid": true,
+  "checks": {
+    "rollupLayerBinding": true,
+    "batchStateRoot": true,
+    "anchorOnChain": true,
+    "creatorAuthority": true,
+    "pqcSignature": true,
+    "chainBinding": true
+  }
+}
