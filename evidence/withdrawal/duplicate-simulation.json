@@ -1,0 +1,43 @@
+{
+  "network": "qorechain-diana",
+  "endpoint": "https://api-testnet.qore.host/cosmos/tx/v1beta1/simulate",
+  "queryHeight": 10317151,
+  "observedAt": "2026-11-18T13:08:21Z",
+  "originalClaimHash": "AB6F83B99E5CD0EAC1FEC0B1C927ED1C2EBB97C871C1A6FF40DE2536E13625E1",
+  "messages": [
+    {
+      "@type": "/qorechain.rdk.v1.MsgExecuteWithdrawal",
+      "submitter": "qor1a5j8wjpxpqc6f7htyv92042nrt7gaegpezdhx4",
+      "rollup_id": "veil-pay-1",
+      "batch_index": "1",
+      "withdrawal_index": "0",
+      "recipient": "qor1gtcwzywp2czm6kse5gukuc8jx8fc5nma9xkdjy",
+      "denom": "uqor",
+      "amount": "250000",
+      "proof": []
+    }
+  ],
+  "httpStatus": 500,
+  "response": {
+    "code": 2,
+    "message": "failed to execute message; message index: 0: withdrawal already executed [cosmos/cosmos-sdk@v0.53.8/baseapp/baseapp.go:1057] with gas used: '178328'",
+    "details": [
+      {
+        "@type": "/cosmos.base.abci.v1beta1.TxResponse",
+        "height": "0",
+        "txhash": "",
+        "codespace": "rdk",
+        "code": 28,
+        "data": "",
+        "raw_log": "failed to execute message; message index: 0: withdrawal already executed",
+        "logs": [],
+        "info": "",
+        "gas_wanted": "50000000",
+        "gas_used": "178328",
+        "tx": null,
+        "timestamp": "",
+        "events": []
+      }
+    ]
+  }
+}

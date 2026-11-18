@@ -4,6 +4,8 @@ Veil links a public qledger-v1 payment on QoreChain Diana to a signed invoice se
 
 [Вывод на L1 и данные для воспроизведения](./evidence/withdrawal/RESULT.md) · [Отчёт о проверке на Diana](./DIANA-2026-11-18.md) · [Payment transaction](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/010AB8E43A327097C6C1E71A2626917B84E8AF87F369F4271F3264BDF8CDB268) · [Live batch](https://api-testnet.qore.host/qorechain/rdk/v1/batch/veil-pay-1/0) · [Protocol discussions](https://github.com/ryssroad/veil/issues)
 
+Offline withdrawal replay recomputes both batch roots from the saved transcript. Live verification checks the receipt, finalized batch and L1 payment against Diana. Checking the transcript against the chain also requires comparing its entries to the published inbox commitments.
+
 ## Verify the payment
 
 The experiment used Node.js 22.22.3 and the public Diana endpoints. Run these commands from the project directory.
