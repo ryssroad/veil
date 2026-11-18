@@ -273,9 +273,16 @@ if (step === 'new-watcher') {
             withdrawalsRoot: batch.withdrawalsRoot, range: [batch.inboxStart, batch.inboxEnd], fraud,
             proofSha256: sha(proof) });
           if (fraud && batch.status === 'submitted') {
-            const res = await broadcast(w, [challengeBatchMsg({
-              challenger: w.cosmos, rollupId, batchIndex: batch.batchIndex, proof,
-            })], { record: challenged ? undefined : 'challenge' });
+            let res;
+            try {
+              res = await broadcast(w, [challengeBatchMsg({
+                challenger: w.cosmos, rollupId, batchIndex: batch.batchIndex, proof,
+              })], { record: challenged ? undefined : 'challenge' });
+            } catch (err) {
+              // A lost race is a result, not an error: record the included tx and its code.
+              const message = String(err?.message ?? err);
+              res = { hash: message.match(/\(tx ([0-9A-F]{64})\)/)?.[1], code: Number(message.match(/code (\d+)/)?.[1]), message };
+            }
             log({ event: 'challenge', index: batch.batchIndex, ...res, proofHex: hex(proof) });
             challenged = challenged || res.code === 0;
           } else if (!fraud && batch.status === 'finalized') {
