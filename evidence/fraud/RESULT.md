@@ -41,9 +41,12 @@ bad-batch to challenge: 2 blocks (10320164 -> 10320166).
 
 ## Winner
 
-Third-party account qor1ua2dl0nuf3qxr5yfhr3x9ah5cdh9vw7qczvdj5. Per the team it
-previously challenged vigil-1 (not verified in this run). We did not retry or
-compete with it.
+Third-party account qor1ua2dl0nuf3qxr5yfhr3x9ah5cdh9vw7qczvdj5, a standing watcher:
+it also won the challenge of vigil-1 batch 1 at block 10235439 and has one failed
+challenge of its own. We did not retry or compete with it.
+
+The chain's code-9 text says "batch already finalized" although the batch status is
+`rejected`; that wording is Diana's own.
 
 ## After the challenge
 
@@ -53,6 +56,12 @@ compete with it.
   submitted at 10320478; consumed=5. Watcher logged it and was stopped manually.
 - Replacement batch 2 finalized at block 10323001 (seen 2026-11-18 15:28 UTC):
   status=finalized, consumed=5, head=5, bondUqor=1000000000.
+
+## Independent check
+
+Claude recomputed the forged and honest roots with a separate Python implementation
+(no RDK code) and checked every transaction above against Diana:
+https://github.com/ryssroad/veil/issues/3#issuecomment-6981607841
 
 ## Net cost to the team
 
