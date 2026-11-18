@@ -2,7 +2,7 @@
 
 Veil links a public qledger-v1 payment on QoreChain Diana to a signed invoice sealed for the recipient and auditor. The first experiment transferred **0.25 test QOR** in batch 0 of `veil-pay-1`.
 
-[Payment transaction](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/010AB8E43A327097C6C1E71A2626917B84E8AF87F369F4271F3264BDF8CDB268) · [Live batch](https://api-testnet.qore.host/qorechain/rdk/v1/batch/veil-pay-1/0) · [Protocol discussions](https://github.com/ryssroad/veil/issues)
+[Отчёт о проверке на Diana](./DIANA-2026-11-18.md) · [Payment transaction](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/010AB8E43A327097C6C1E71A2626917B84E8AF87F369F4271F3264BDF8CDB268) · [Live batch](https://api-testnet.qore.host/qorechain/rdk/v1/batch/veil-pay-1/0) · [Protocol discussions](https://github.com/ryssroad/veil/issues)
 
 ## Verify the payment
 
