@@ -1,0 +1,17 @@
+{
+  "name": "veil-diana",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "audit": "node audit.mjs",
+    "test": "node --test invoice.test.mjs"
+  },
+  "dependencies": {
+    "@cosmjs/stargate": "0.39.0",
+    "@noble/post-quantum": "0.6.1",
+    "@qorechain/qoreseal": "0.1.0",
+    "@qorechain/rdk": "0.9.0",
+    "@qorechain/sdk": "0.10.0"
+  }
+}

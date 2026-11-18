@@ -1,0 +1,8 @@
+{
+  "step": "payment",
+  "chainId": "qorechain-diana",
+  "rollupId": "veil-pay-1",
+  "hash": "010AB8E43A327097C6C1E71A2626917B84E8AF87F369F4271F3264BDF8CDB268",
+  "height": 10303837,
+  "code": 0
+}
