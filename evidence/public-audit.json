@@ -1,0 +1,35 @@
+{
+  "chainId": "qorechain-diana",
+  "rollupId": "veil-pay-1",
+  "role": "public",
+  "status": "finalized",
+  "submittedHeight": 10303842,
+  "finalizedHeight": 10306367,
+  "submittedTime": 1794988312,
+  "challengeWindow": 3600,
+  "paymentTx": "010AB8E43A327097C6C1E71A2626917B84E8AF87F369F4271F3264BDF8CDB268",
+  "transferDigest": "4b64b5943c968ad507af737d09597601e3b574e4989a3aaf30d2f57df5a73354",
+  "envelopeDigest": "d4853ada420baae9e71b942709f09eb2c2a3b352c1ca2f898e0ff44223e8eaa3",
+  "envelopeBytes": 5933,
+  "amountUqor": "250000",
+  "payer": "b28704147223f0f87fe15d21ddbfbd2f9555e71bdaa5fdf20f9001a67a52013b",
+  "payee": "57afc88fe4b99fc0ea2b4862ff8eb75a2bc20aeebec789dcecccf3303ef178d1",
+  "balancesUqor": {
+    "payerBefore": "1000000",
+    "payerAfter": "750000",
+    "payeeBefore": "0",
+    "payeeAfter": "250000"
+  },
+  "batchRoot": "03a597edc173caf8a4b63400382a6d50ca0797db45ac1b2d212153c28c32742e",
+  "dataHash": "0ef5a679e93e7028d6ba033b9ae8097cfbbea55c557265b65a6982fec12ee109",
+  "receiptValid": true,
+  "receiptChecks": {
+    "rollupLayerBinding": true,
+    "batchStateRoot": true,
+    "anchorOnChain": true,
+    "creatorAuthority": true,
+    "pqcSignature": true,
+    "chainBinding": true
+  },
+  "tamperedReceiptRejected": true
+}
