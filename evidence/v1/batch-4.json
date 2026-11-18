@@ -1,0 +1,15 @@
+{
+  "step": "batch",
+  "hash": "FAA182EB62C80974CABF89A8A041D5469DACD79FC7CC54E3309A9A3C8CD8739A",
+  "height": 10342705,
+  "code": 0,
+  "sender": "qor1a5j8wjpxpqc6f7htyv92042nrt7gaegpezdhx4",
+  "at": "2026-11-18T23:16:14.785Z",
+  "batchIndex": "4",
+  "range": [
+    11,
+    "12"
+  ],
+  "stateRoot": "658b7a896f4954436362d2f0934c1f8773e93004f7560fa5e1a74c287b7cd8bb",
+  "withdrawalsRoot": ""
+}
