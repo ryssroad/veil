@@ -1,0 +1,4 @@
+{
+  "payloadUtf8": "veil/fraud-demo/v1: public marker for a deliberately forged batch; qledger ignores it. 2026-11-18T14:19:40.313Z",
+  "sha256": "a8d048b58cfa2928bc4eda02c5bd665872fdf9caaf3d146574651e27a8b316f7"
+}
