@@ -1,0 +1,47 @@
+{
+  "step": "pay",
+  "hash": "0B913BF8042BD47C83410F4AFDB2B6571A4D754B4E0B3476B1FF9FEF848B6F31",
+  "height": 10333495,
+  "code": 0,
+  "sender": "qor1a5j8wjpxpqc6f7htyv92042nrt7gaegpezdhx4",
+  "at": "2026-11-18T19:37:06.247Z",
+  "payer": "b28704147223f0f87fe15d21ddbfbd2f9555e71bdaa5fdf20f9001a67a52013b",
+  "nonce": "1",
+  "payeeAccount": "12bd9a469e2e812f34f27c75a80b6b161c4cf352509c96be7fc5fc86d8ad915e",
+  "amount": "300000",
+  "payeeBinding": {
+    "sequence": 6,
+    "readerKey": "126fbb13f5154c962296bb1f8fb176deef561dbf54dcfb72c6a9cd0566d476db"
+  },
+  "auditor": "qor1kc6lwdz77q6f32vcfae35yu3k84l58t5xrsy3l",
+  "auditorKey": "553574fd2056e5ecb94969c9f40fbdccdf4be99525baa381c0e67b5b6cf63a01",
+  "discovery": [
+    {
+      "sequence": 6,
+      "account": "12bd9a469e2e812f34f27c75a80b6b161c4cf352509c96be7fc5fc86d8ad915e",
+      "result": "bound",
+      "fingerprint": "126fbb13f5154c962296bb1f8fb176deef561dbf54dcfb72c6a9cd0566d476db"
+    },
+    {
+      "sequence": 7,
+      "result": "rejected",
+      "reason": "statement: account is not the hash of the signing key"
+    },
+    {
+      "sequence": 8,
+      "account": "12bd9a469e2e812f34f27c75a80b6b161c4cf352509c96be7fc5fc86d8ad915e",
+      "result": "ignored",
+      "reason": "account already bound by an earlier statement"
+    },
+    {
+      "sequence": 9,
+      "account": "12bd9a469e2e812f34f27c75a80b6b161c4cf352509c96be7fc5fc86d8ad915e",
+      "result": "ignored",
+      "reason": "re-post of the binding statement"
+    }
+  ],
+  "transferDigest": "30d88ce02a7d0e52739578ca5397f254a87b8caae3bc0ded8e7e8a084b1df521",
+  "envelopeDigest": "d5a00768c31f9482e90ccc26ccd055bedc70a5bc978229c47afd21e1340c715a",
+  "envelopeBytes": 6013,
+  "bodyBytes": 273
+}

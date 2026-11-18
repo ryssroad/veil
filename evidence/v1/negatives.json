@@ -1,0 +1,18 @@
+{
+  "step": "post-negatives",
+  "hash": "3A8AA293B3AD9E653F4DDAA46D329516D2F1766BF81F16FB9B19BE2E73D2ECEF",
+  "height": 10333482,
+  "code": 0,
+  "sender": "qor1a5j8wjpxpqc6f7htyv92042nrt7gaegpezdhx4",
+  "at": "2026-11-18T19:36:47.589Z",
+  "order": [
+    "substituted key claiming the payee account",
+    "second valid statement by the payee",
+    "re-post of the original"
+  ],
+  "digests": [
+    "e97fde37963929f9b162848f18e14d4b70034c8723f93275dd84c71e98a30866",
+    "f39df5971cfd7e176bb8e1246d8e0e2d222f86a6fa84fcea45b56cb4ae742883",
+    "ebd339244fd4f075da0e61798d3389a5236ce0affafcca182f2f4de46d48982f"
+  ]
+}
