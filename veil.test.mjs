@@ -5,14 +5,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { seal, sealKeysFromSeed } from '@qorechain/qoreseal';
-import { encodeQledgerDeposit, encodeQledgerTx, qledgerKeypairFromSeed, signQledgerTx, qledgerSigningMessage, qledgerTxUnsigned, QledgerLedger } from '@qorechain/rdk';
+import { mapKemKeyView, encodeQledgerDeposit, encodeQledgerTx, qledgerKeypairFromSeed, signQledgerTx, qledgerSigningMessage, qledgerTxUnsigned, QledgerLedger } from '@qorechain/rdk';
 import { ml_dsa44 } from '@noble/post-quantum/ml-dsa.js';
 import {
   env, chainId, rollupId, hex, sha256,
   PURPOSE, MAX_BODY_BYTES, DESCRIPTION_MAX_BYTES,
   encodeBody, decodeBody, kemFingerprint, createInvoicePayment, openInvoice,
   encodeReaderStatement, decodeReaderStatement, discoverReaderKeys,
-  replayExecutions, coPostedEnvelope, InvoiceImporter, VeilError,
+  replayExecutions, coPostedEnvelope, InvoiceImporter, VeilError, kemKeyBytes, kemKeyFromRegistry,
 } from './veil.mjs';
 
 const OPERATOR = 'qor1a5j8wjpxpqc6f7htyv92042nrt7gaegpezdhx4';
@@ -192,4 +192,23 @@ test('two clients in separate directories: payer discovers both keys without loc
   const a = openInvoice({ transfer, envelope, sealKeys: sealKeysFromSeed(readFileSync(join(dirA, 'seal.seed'))), auditorKey: key });
   const b = openInvoice({ transfer, envelope, sealKeys: sealKeysFromSeed(readFileSync(join(dirB, 'seal.seed'))), auditorKey: key });
   assert.deepEqual(a.invoice, b.invoice);
+});
+
+test('registry keys arrive as hex strings and are decoded, never hashed as text', () => {
+  const p = parties();
+  const raw = p.auditorSeal.mlkemPublicKey;
+  // The chain REST answer as mapped by RDK getKemKey: publicKey becomes a hex string.
+  const view = mapKemKeyView({ address: 'qor1x', algorithm_id: 2, public_key: Buffer.from(raw).toString('base64'), registered_height: '1' });
+  assert.equal(typeof view.publicKey, 'string');
+  const key = kemKeyFromRegistry(view);
+  assert.equal(hex(key), hex(raw));
+  assert.equal(kemFingerprint(key), kemFingerprint(raw));
+  // Passing the hex string itself anywhere a key is expected is refused.
+  assert.throws(() => kemFingerprint(view.publicKey), code('key'));
+  assert.throws(() => kemKeyBytes(view.publicKey), code('key'));
+  assert.throws(() => pay(p, { auditorKem: view.publicKey }), code('key'));
+  assert.throws(() => kemKeyFromRegistry({ ...view, algorithmId: 1 }), code('key'));
+  // A payment sealed with the decoded registry key opens for the auditor.
+  const { transfer, envelope } = pay(p, { auditorKem: key });
+  assert.ok(openInvoice({ transfer, envelope, sealKeys: p.auditorSeal, auditorKey: kemFingerprint(key) }));
 });

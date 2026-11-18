@@ -48,7 +48,7 @@ import {
 import { StargateClient } from '@cosmjs/stargate';
 import {
   env, chainId, rollupId, hex, sha256, kemFingerprint,
-  createInvoicePayment, openInvoice, encodeReaderStatement, discoverReaderKeys,
+  kemKeyFromRegistry, createInvoicePayment, openInvoice, encodeReaderStatement, discoverReaderKeys,
   replayExecutions, coPostedEnvelope, InvoiceImporter,
 } from './veil.mjs';
 
@@ -120,6 +120,12 @@ async function broadcast(account, messages, name, { mode = 'hybrid', registry = 
   }
 }
 
+/** An address's ML-KEM-1024 key from the chain registry, as bytes, or undefined. */
+async function registryKey(address) {
+  const view = await client.rest.getKemKey(address);
+  return view ? { key: kemKeyFromRegistry(view), registeredHeight: view.registeredHeight } : undefined;
+}
+
 /** Every inbox entry 1..head, checked against the chain's accumulator, with sequence numbers. */
 async function inboxEntries() {
   const inbox = await client.rest.getInbox(rollupId);
@@ -178,14 +184,14 @@ if (step === 'new-payee') {
     out.pqc = await broadcast(a, [buildRegisterPqcKeyMsg(a.cosmos, { pqcKeypair: a.pqc, proofOfPossession })],
       'register-auditor-pqc', { mode: 'classical', registry: null });
   }
-  const current = await client.rest.getKemKey(a.cosmos);
+  const current = await registryKey(a.cosmos);
   if (current) {
-    assert.equal(kemFingerprint(current.publicKey), out.readerKey, 'the registry holds a different key for this auditor');
+    assert.equal(kemFingerprint(current.key), out.readerKey, 'the registry holds a different key for this auditor');
   } else {
     out.kem = await broadcast(a, [registerKemKeyMsg({ sender: a.cosmos, publicKey: kem })], 'register-auditor-kem');
   }
-  const after = await client.rest.getKemKey(a.cosmos);
-  assert.ok(after && kemFingerprint(after.publicKey) === out.readerKey);
+  const after = await registryKey(a.cosmos);
+  assert.ok(after && kemFingerprint(after.key) === out.readerKey);
   out.registeredHeight = after.registeredHeight;
   record('auditor', out);
 } else if (step === 'post-statement') {
@@ -218,7 +224,7 @@ if (step === 'new-payee') {
   const { bindings, events } = discoverReaderKeys(entries);
   const payee = bindings.get(payeeAccount);
   assert.ok(payee, 'no reader-key statement bound for ' + payeeAccount);
-  const auditor = await client.rest.getKemKey(auditorAddress);
+  const auditor = await registryKey(auditorAddress);
   assert.ok(auditor, 'auditor has no key in the chain registry');
   const { ledger } = replayExecutions(entries);
   const state = ledger.get(payer.accountId);
@@ -226,7 +232,7 @@ if (step === 'new-payee') {
   assert.ok(state.balance >= amount, `payer holds ${state.balance} uqor`);
   const { transfer, envelope, body } = createInvoicePayment({
     payer, nonce: state.nonce, beneficiary: Buffer.from(payeeAccount, 'hex'), amount,
-    beneficiaryKem: payee.kemPublicKey, auditorKem: auditor.publicKey,
+    beneficiaryKem: payee.kemPublicKey, auditorKem: auditor.key,
     id: randomBytes(16).toString('hex'), description: option('description', 'Veil v1 live invoice'),
   });
   const tx = await broadcast(op, [
@@ -235,7 +241,7 @@ if (step === 'new-payee') {
   ], 'pay');
   record('payment', { ...tx, payer: hex(payer.accountId), nonce: state.nonce, payeeAccount, amount,
     payeeBinding: { sequence: payee.sequence, readerKey: payee.fingerprint }, auditor: auditorAddress,
-    auditorKey: kemFingerprint(auditor.publicKey), discovery: events,
+    auditorKey: kemFingerprint(auditor.key), discovery: events,
     transferDigest: hex(sha256(transfer)), envelopeDigest: hex(sha256(envelope)),
     envelopeBytes: envelope.length, bodyBytes: body.length });
 } else if (step === 'batch') {
@@ -254,9 +260,9 @@ if (step === 'new-payee') {
   assert.ok(['payee', 'auditor'].includes(role));
   const sealKeys = sealKeysFromSeed(readFileSync(join(dir, 'seal.seed')));
   const mine = role === 'payee' ? hex(payeeKeys(dir).l2.accountId) : undefined;
-  const auditor = await client.rest.getKemKey(auditorAddress);
+  const auditor = await registryKey(auditorAddress);
   assert.ok(auditor, 'auditor has no key in the chain registry');
-  const auditorKey = kemFingerprint(auditor.publicKey);
+  const auditorKey = kemFingerprint(auditor.key);
   if (role === 'auditor') assert.equal(auditorKey, kemFingerprint(sealKeys.mlkemPublicKey), 'this directory is not the registered auditor');
   const { entries } = await inboxEntries();
   const all = await batches();

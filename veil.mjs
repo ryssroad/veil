@@ -63,8 +63,28 @@ export class VeilError extends Error {
 const fail = (code, message) => { throw new VeilError(code, message); };
 const check = (ok, code, message) => { if (!ok) fail(code, message); };
 
+/** ML-KEM-1024 encapsulation key as bytes; rejects hex strings and other shapes. */
+export function kemKeyBytes(key) {
+  check(key instanceof Uint8Array, 'key', `an ML-KEM-1024 key must be bytes, got ${typeof key}`);
+  check(key.length === 1568, 'key', `an ML-KEM-1024 key is 1568 bytes, got ${key.length}`);
+  try {
+    validateMlkemPublicKey(key);
+  } catch {
+    fail('key', 'invalid ML-KEM-1024 key');
+  }
+  return Buffer.from(key);
+}
+
+/** The key from an RDK registry view (`getKemKey`), whose publicKey is a hex string. */
+export function kemKeyFromRegistry(view) {
+  check(view && typeof view.publicKey === 'string' && /^[0-9a-fA-F]{3136}$/.test(view.publicKey), 'key',
+    'registry view has no 1568-byte hex public key');
+  check(view.algorithmId === 2, 'key', `registry key algorithm ${view.algorithmId} is not ML-KEM-1024`);
+  return kemKeyBytes(Buffer.from(view.publicKey, 'hex'));
+}
+
 export function kemFingerprint(kemPublicKey) {
-  return hex(sha256(kemPublicKey));
+  return hex(sha256(kemKeyBytes(kemPublicKey)));
 }
 
 function aadFor(transfer) {
@@ -114,8 +134,8 @@ export function decodeBody(body) {
  * the serialized envelope size, before sealing.
  */
 export function createInvoicePayment({ payer, nonce, beneficiary, amount, beneficiaryKem, auditorKem, id, description }) {
-  validateMlkemPublicKey(beneficiaryKem);
-  validateMlkemPublicKey(auditorKem);
+  beneficiaryKem = kemKeyBytes(beneficiaryKem);
+  auditorKem = kemKeyBytes(auditorKem);
   const transfer = encodeQledgerTx(signQledgerTx({ ...env, ...payer, to: beneficiary, amount: BigInt(amount), nonce: BigInt(nonce) }));
   const body = encodeBody({
     version: BODY_VERSION,
@@ -189,7 +209,7 @@ const lp = (s) => { const b = Buffer.from(s, 'utf8'); return Buffer.concat([u32(
 
 /** A statement signed by the L2 account key; anyone may post it to the inbox. */
 export function encodeReaderStatement({ keypair, kemPublicKey, account = qledgerAccountId(keypair.publicKey), chain = chainId, rollup = rollupId }) {
-  validateMlkemPublicKey(kemPublicKey);
+  kemPublicKey = kemKeyBytes(kemPublicKey);
   const unsigned = Buffer.concat([VRK_MAGIC, lp(chain), lp(rollup), Buffer.from(account), Buffer.from(keypair.publicKey), Buffer.from(kemPublicKey)]);
   const signature = ml_dsa44.sign(sha256(unsigned), keypair.secretKey, { context: VRK_CONTEXT });
   const out = Buffer.concat([unsigned, signature]);
