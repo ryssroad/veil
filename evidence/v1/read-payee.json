@@ -1,0 +1,60 @@
+{
+  "role": "payee",
+  "at": "2026-11-18T20:38:00.340Z",
+  "auditor": "qor1kc6lwdz77q6f32vcfae35yu3k84l58t5xrsy3l",
+  "auditorKey": "553574fd2056e5ecb94969c9f40fbdccdf4be99525baa381c0e67b5b6cf63a01",
+  "readerKeyEvents": [
+    {
+      "sequence": 6,
+      "account": "12bd9a469e2e812f34f27c75a80b6b161c4cf352509c96be7fc5fc86d8ad915e",
+      "result": "bound",
+      "fingerprint": "126fbb13f5154c962296bb1f8fb176deef561dbf54dcfb72c6a9cd0566d476db"
+    },
+    {
+      "sequence": 7,
+      "result": "rejected",
+      "reason": "statement: account is not the hash of the signing key"
+    },
+    {
+      "sequence": 8,
+      "account": "12bd9a469e2e812f34f27c75a80b6b161c4cf352509c96be7fc5fc86d8ad915e",
+      "result": "ignored",
+      "reason": "account already bound by an earlier statement"
+    },
+    {
+      "sequence": 9,
+      "account": "12bd9a469e2e812f34f27c75a80b6b161c4cf352509c96be7fc5fc86d8ad915e",
+      "result": "ignored",
+      "reason": "re-post of the binding statement"
+    }
+  ],
+  "accepted": [
+    {
+      "sequence": 10,
+      "envelopeSequence": 11,
+      "batch": 3,
+      "receiptChecks": {
+        "rollupLayerBinding": true,
+        "batchStateRoot": true,
+        "anchorOnChain": true,
+        "creatorAuthority": true,
+        "pqcSignature": true,
+        "chainBinding": true
+      },
+      "import": "imported",
+      "invoice": {
+        "version": 2,
+        "id": "cb3c338ae51bc9bdfd86100ab6c0a7bc",
+        "description": "Veil v1 live invoice",
+        "amountUqor": "300000",
+        "beneficiary": "12bd9a469e2e812f34f27c75a80b6b161c4cf352509c96be7fc5fc86d8ad915e",
+        "auditorKey": "553574fd2056e5ecb94969c9f40fbdccdf4be99525baa381c0e67b5b6cf63a01"
+      },
+      "payer": "b28704147223f0f87fe15d21ddbfbd2f9555e71bdaa5fdf20f9001a67a52013b",
+      "nonce": "1",
+      "transferDigest": "30d88ce02a7d0e52739578ca5397f254a87b8caae3bc0ded8e7e8a084b1df521",
+      "envelopeDigest": "d5a00768c31f9482e90ccc26ccd055bedc70a5bc978229c47afd21e1340c715a"
+    }
+  ],
+  "skipped": []
+}

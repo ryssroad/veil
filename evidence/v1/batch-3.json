@@ -1,0 +1,15 @@
+{
+  "step": "batch",
+  "hash": "AFAF44DA9A7BC7511B8D61462C53CACDDE40C65411D2C38893C0A653216B1AE1",
+  "height": 10333503,
+  "code": 0,
+  "sender": "qor1a5j8wjpxpqc6f7htyv92042nrt7gaegpezdhx4",
+  "at": "2026-11-18T19:37:18.156Z",
+  "batchIndex": "3",
+  "range": [
+    5,
+    "11"
+  ],
+  "stateRoot": "658b7a896f4954436362d2f0934c1f8773e93004f7560fa5e1a74c287b7cd8bb",
+  "withdrawalsRoot": ""
+}
