@@ -1,0 +1,434 @@
+{
+  "rest": "https://api-testnet.qore.host",
+  "heightHeader": "x-cosmos-block-height",
+  "snapshots": [
+    {
+      "path": "/qorechain/rdk/v1/batch/veil-pay-1/1",
+      "height": 10317799,
+      "status": 200,
+      "body": {
+        "batch": {
+          "rollup_id": "veil-pay-1",
+          "batch_index": "1",
+          "state_root": "40dd6411e0bef008889fdf730706e5eade24205604f33c1680f181eac148e02b",
+          "prev_state_root": "03a597edc173caf8a4b63400382a6d50ca0797db45ac1b2d212153c28c32742e",
+          "tx_count": "1",
+          "data_hash": "369fe67f03128f459a66c8b96ec8d1d208f40e35d245f50179814926f71e4e78",
+          "proof_type": "fraud",
+          "status": "finalized",
+          "submitted_at": "10313344",
+          "finalized_at": "10315867",
+          "withdrawals_root": "926491cd7f244c47b7693a895a2167d7d70c93f9c9bb26b92908aacdafc82a6c",
+          "submitted_time": "1795001861",
+          "withdrawals_bound": true,
+          "inbox_start": "3",
+          "inbox_end": "4",
+          "withdrawals_root_reduced": false
+        }
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/batch/veil-pay-1/2",
+      "height": 10317799,
+      "status": 404,
+      "body": {
+        "code": 5,
+        "message": "batch veil-pay-1/2 not found",
+        "details": []
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/inbox/veil-pay-1",
+      "height": 10317799,
+      "status": 200,
+      "body": {
+        "inbox": {
+          "rollup_id": "veil-pay-1",
+          "sequencing": "based",
+          "head_sequence": "4",
+          "head_acc": "ca68907ade01aa4fa9fd732f2f0e869928e6f7f916b98260c258059a98bb44d7",
+          "consumed_sequence": "4",
+          "consumed_acc": "ca68907ade01aa4fa9fd732f2f0e869928e6f7f916b98260c258059a98bb44d7",
+          "range_end": "4",
+          "range_data_hash": "baa0db86bedc0af63151345e7c2ce2c03f569c1f7f92f1638fae7ddb0bbd2887"
+        }
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/submitter_bond/veil-pay-1/qor1a5j8wjpxpqc6f7htyv92042nrt7gaegpezdhx4",
+      "height": 10317799,
+      "status": 200,
+      "body": {
+        "amount": "1000000000",
+        "last_submit_time": "1795001861",
+        "unbond_after": "1795005461",
+        "pending": "0"
+      }
+    },
+    {
+      "path": "/cosmos/bank/v1beta1/balances/qor1a5j8wjpxpqc6f7htyv92042nrt7gaegpezdhx4/by_denom?denom=uqor",
+      "height": 10317799,
+      "status": 200,
+      "body": {
+        "balance": {
+          "denom": "uqor",
+          "amount": "2996434900"
+        }
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/inbox/wicketgate-pay",
+      "height": 10195561,
+      "status": 200,
+      "body": {
+        "inbox": {
+          "rollup_id": "wicketgate-pay",
+          "sequencing": "based",
+          "head_sequence": "7",
+          "head_acc": "72baf2b4c442da56ea9496afaa6c9cdc991606ec7682698e5c3db9dcd3dd04e6",
+          "consumed_sequence": "6",
+          "consumed_acc": "4b7c68a58bebd6e4c96222d39cbf17b79f5258c93e2b2fa10bb79b3a4d2c7997",
+          "range_end": "7",
+          "range_data_hash": "3cd514737d8ae1ba5cd8cab0a4d702c6009797a8773b48988622fc406b6bb7c9"
+        }
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/inbox/wicketgate-pay",
+      "height": 10195562,
+      "status": 200,
+      "body": {
+        "inbox": {
+          "rollup_id": "wicketgate-pay",
+          "sequencing": "based",
+          "head_sequence": "7",
+          "head_acc": "72baf2b4c442da56ea9496afaa6c9cdc991606ec7682698e5c3db9dcd3dd04e6",
+          "consumed_sequence": "7",
+          "consumed_acc": "72baf2b4c442da56ea9496afaa6c9cdc991606ec7682698e5c3db9dcd3dd04e6",
+          "range_end": "7",
+          "range_data_hash": "b58a496089bc9bacd0eb0d73f7383e3a6448cddd242250e0588ade2071f72dba"
+        }
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/inbox/wicketgate-pay",
+      "height": 10195565,
+      "status": 200,
+      "body": {
+        "inbox": {
+          "rollup_id": "wicketgate-pay",
+          "sequencing": "based",
+          "head_sequence": "7",
+          "head_acc": "72baf2b4c442da56ea9496afaa6c9cdc991606ec7682698e5c3db9dcd3dd04e6",
+          "consumed_sequence": "7",
+          "consumed_acc": "72baf2b4c442da56ea9496afaa6c9cdc991606ec7682698e5c3db9dcd3dd04e6",
+          "range_end": "7",
+          "range_data_hash": "b58a496089bc9bacd0eb0d73f7383e3a6448cddd242250e0588ade2071f72dba"
+        }
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/inbox/wicketgate-pay",
+      "height": 10195566,
+      "status": 200,
+      "body": {
+        "inbox": {
+          "rollup_id": "wicketgate-pay",
+          "sequencing": "based",
+          "head_sequence": "7",
+          "head_acc": "72baf2b4c442da56ea9496afaa6c9cdc991606ec7682698e5c3db9dcd3dd04e6",
+          "consumed_sequence": "6",
+          "consumed_acc": "4b7c68a58bebd6e4c96222d39cbf17b79f5258c93e2b2fa10bb79b3a4d2c7997",
+          "range_end": "7",
+          "range_data_hash": "3cd514737d8ae1ba5cd8cab0a4d702c6009797a8773b48988622fc406b6bb7c9"
+        }
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/inbox/wicketgate-pay",
+      "height": 10195599,
+      "status": 200,
+      "body": {
+        "inbox": {
+          "rollup_id": "wicketgate-pay",
+          "sequencing": "based",
+          "head_sequence": "7",
+          "head_acc": "72baf2b4c442da56ea9496afaa6c9cdc991606ec7682698e5c3db9dcd3dd04e6",
+          "consumed_sequence": "7",
+          "consumed_acc": "72baf2b4c442da56ea9496afaa6c9cdc991606ec7682698e5c3db9dcd3dd04e6",
+          "range_end": "7",
+          "range_data_hash": "b58a496089bc9bacd0eb0d73f7383e3a6448cddd242250e0588ade2071f72dba"
+        }
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/batch/wicketgate-pay/2",
+      "height": 10195562,
+      "status": 200,
+      "body": {
+        "batch": {
+          "rollup_id": "wicketgate-pay",
+          "batch_index": "2",
+          "state_root": "fe31b41d7b01c52356bd03c885860311eaa2ee518902f605dbc636573f8b85aa",
+          "prev_state_root": "ead59be450d7f0bced9eaf5df81fb0b0372b0e6ce02e145794eee226748fc850",
+          "tx_count": "1",
+          "data_hash": "3cd514737d8ae1ba5cd8cab0a4d702c6009797a8773b48988622fc406b6bb7c9",
+          "proof_type": "fraud",
+          "status": "submitted",
+          "submitted_at": "10195562",
+          "finalized_at": "0",
+          "withdrawals_root": "",
+          "submitted_time": "1794833717",
+          "withdrawals_bound": true,
+          "inbox_start": "6",
+          "inbox_end": "7",
+          "withdrawals_root_reduced": false
+        }
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/batch/wicketgate-pay/2",
+      "height": 10195599,
+      "status": 200,
+      "body": {
+        "batch": {
+          "rollup_id": "wicketgate-pay",
+          "batch_index": "2",
+          "state_root": "fe31b41d7b01c52356bd03c885860311eaa2ee518902f605dbc636573f8b85ab",
+          "prev_state_root": "ead59be450d7f0bced9eaf5df81fb0b0372b0e6ce02e145794eee226748fc850",
+          "tx_count": "1",
+          "data_hash": "3cd514737d8ae1ba5cd8cab0a4d702c6009797a8773b48988622fc406b6bb7c9",
+          "proof_type": "fraud",
+          "status": "submitted",
+          "submitted_at": "10195599",
+          "finalized_at": "0",
+          "withdrawals_root": "",
+          "submitted_time": "1794833771",
+          "withdrawals_bound": true,
+          "inbox_start": "6",
+          "inbox_end": "7",
+          "withdrawals_root_reduced": false
+        }
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/batch/wicketgate-pay/2",
+      "height": 10198113,
+      "status": 200,
+      "body": {
+        "batch": {
+          "rollup_id": "wicketgate-pay",
+          "batch_index": "2",
+          "state_root": "fe31b41d7b01c52356bd03c885860311eaa2ee518902f605dbc636573f8b85ab",
+          "prev_state_root": "ead59be450d7f0bced9eaf5df81fb0b0372b0e6ce02e145794eee226748fc850",
+          "tx_count": "1",
+          "data_hash": "3cd514737d8ae1ba5cd8cab0a4d702c6009797a8773b48988622fc406b6bb7c9",
+          "proof_type": "fraud",
+          "status": "submitted",
+          "submitted_at": "10195599",
+          "finalized_at": "0",
+          "withdrawals_root": "",
+          "submitted_time": "1794833771",
+          "withdrawals_bound": true,
+          "inbox_start": "6",
+          "inbox_end": "7",
+          "withdrawals_root_reduced": false
+        }
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/batch/wicketgate-pay/2",
+      "height": 10198114,
+      "status": 200,
+      "body": {
+        "batch": {
+          "rollup_id": "wicketgate-pay",
+          "batch_index": "2",
+          "state_root": "fe31b41d7b01c52356bd03c885860311eaa2ee518902f605dbc636573f8b85ab",
+          "prev_state_root": "ead59be450d7f0bced9eaf5df81fb0b0372b0e6ce02e145794eee226748fc850",
+          "tx_count": "1",
+          "data_hash": "3cd514737d8ae1ba5cd8cab0a4d702c6009797a8773b48988622fc406b6bb7c9",
+          "proof_type": "fraud",
+          "status": "finalized",
+          "submitted_at": "10195599",
+          "finalized_at": "10198114",
+          "withdrawals_root": "",
+          "submitted_time": "1794833771",
+          "withdrawals_bound": true,
+          "inbox_start": "6",
+          "inbox_end": "7",
+          "withdrawals_root_reduced": false
+        }
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/submitter_bond/wicketgate-pay/qor1qmjh62n42g60awt47qry7ah5f0rm5eulstekac",
+      "height": 10195565,
+      "status": 200,
+      "body": {
+        "amount": "1000000000",
+        "last_submit_time": "1794833717",
+        "unbond_after": "1794837317",
+        "pending": "1"
+      }
+    },
+    {
+      "path": "/cosmos/bank/v1beta1/balances/qor1v5npuskzymj2xsjk7hc5ft3w5c7mtwhyzv8fwp/by_denom?denom=uqor",
+      "height": 10195565,
+      "status": 200,
+      "body": {
+        "balance": {
+          "denom": "uqor",
+          "amount": "10567999"
+        }
+      }
+    },
+    {
+      "path": "/qorechain/rdk/v1/submitter_bond/wicketgate-pay/qor1qmjh62n42g60awt47qry7ah5f0rm5eulstekac",
+      "height": 10195566,
+      "status": 200,
+      "body": {
+        "amount": "0",
+        "last_submit_time": "1794833717",
+        "unbond_after": "1794837317",
+        "pending": "0"
+      }
+    },
+    {
+      "path": "/cosmos/bank/v1beta1/balances/qor1v5npuskzymj2xsjk7hc5ft3w5c7mtwhyzv8fwp/by_denom?denom=uqor",
+      "height": 10195566,
+      "status": 200,
+      "body": {
+        "balance": {
+          "denom": "uqor",
+          "amount": "510387999"
+        }
+      }
+    }
+  ],
+  "historicalWicketgateTransactions": [
+    {
+      "txhash": "60F58BD91F66E88991D9540DC2FCEC03B6E6C611D3D9AE3BA2C056E8363D1617",
+      "height": "10195557",
+      "timestamp": "2026-11-16T12:55:10Z",
+      "code": 0,
+      "fee": [
+        {
+          "denom": "uqor",
+          "amount": "105000"
+        }
+      ],
+      "messageTypes": [
+        "/qorechain.rdk.v1.MsgPostRollupData"
+      ],
+      "events": [
+        {
+          "type": "rdk_data_posted",
+          "attributes": {
+            "rollup_id": "wicketgate-pay",
+            "sequence": "7",
+            "data_hash": "336f3f08a403a476b3f17b8eaea0e9829832ae0c45eed3cd518205a446931912",
+            "size": "3783",
+            "billable_bytes": "3783",
+            "fee": "37830uqor",
+            "poster": "qor16087dpc985wvk6hlsl2x8p0kyumz394q0lvm6k",
+            "inbox_acc": "72baf2b4c442da56ea9496afaa6c9cdc991606ec7682698e5c3db9dcd3dd04e6",
+            "msg_index": "0"
+          }
+        }
+      ]
+    },
+    {
+      "txhash": "53998C8AF7C47893CB85F679E83F496E9A7D9169530930A96370C9F636D963A7",
+      "height": "10195562",
+      "timestamp": "2026-11-16T12:55:17Z",
+      "code": 0,
+      "fee": [
+        {
+          "denom": "uqor",
+          "amount": "300000"
+        }
+      ],
+      "messageTypes": [
+        "/qorechain.rdk.v1.MsgSubmitBatch"
+      ],
+      "events": [
+        {
+          "type": "rdk_inbox_consumed",
+          "attributes": {
+            "rollup_id": "wicketgate-pay",
+            "batch_index": "2",
+            "inbox_start": "6",
+            "inbox_end": "7",
+            "msg_index": "0"
+          }
+        }
+      ]
+    },
+    {
+      "txhash": "2A2CDF8727310DFD45AAE25DAA8FF6E2D58ED4E9A482B47D6125B5C702F822D8",
+      "height": "10195566",
+      "timestamp": "2026-11-16T12:55:22Z",
+      "code": 0,
+      "fee": [
+        {
+          "denom": "uqor",
+          "amount": "180000"
+        }
+      ],
+      "messageTypes": [
+        "/qorechain.rdk.v1.MsgChallengeBatch"
+      ],
+      "events": [
+        {
+          "type": "rdk_inbox_rolled_back",
+          "attributes": {
+            "rollup_id": "wicketgate-pay",
+            "consumed_sequence": "6",
+            "msg_index": "0"
+          }
+        },
+        {
+          "type": "rdk_fraud_upheld",
+          "attributes": {
+            "rollup_id": "wicketgate-pay",
+            "batch_index": "2",
+            "submitter": "qor1qmjh62n42g60awt47qry7ah5f0rm5eulstekac",
+            "challenger": "qor1v5npuskzymj2xsjk7hc5ft3w5c7mtwhyzv8fwp",
+            "slashed": "1000000000uqor",
+            "challenger_reward": "500000000uqor",
+            "burned": "500000000uqor",
+            "msg_index": "0"
+          }
+        }
+      ]
+    },
+    {
+      "txhash": "D0F1FE8D65D0E99B4198DBA3E2536FAC3F562DA209EDCD6905F61528CFFF1311",
+      "height": "10195599",
+      "timestamp": "2026-11-16T12:56:11Z",
+      "code": 0,
+      "fee": [
+        {
+          "denom": "uqor",
+          "amount": "300000"
+        }
+      ],
+      "messageTypes": [
+        "/qorechain.rdk.v1.MsgSubmitBatch"
+      ],
+      "events": [
+        {
+          "type": "rdk_inbox_consumed",
+          "attributes": {
+            "rollup_id": "wicketgate-pay",
+            "batch_index": "2",
+            "inbox_start": "6",
+            "inbox_end": "7",
+            "msg_index": "0"
+          }
+        }
+      ]
+    }
+  ]
+}

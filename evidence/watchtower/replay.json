@@ -1,0 +1,12 @@
+{
+  "chainId": "qorechain-diana",
+  "rollupId": "veil-pay-1",
+  "batchIndex": 1,
+  "actualStateRoot": "40dd6411e0bef008889fdf730706e5eade24205604f33c1680f181eac148e02b",
+  "offlineControlStateRoot": "03a597edc173caf8a4b63400382a6d50ca0797db45ac1b2d212153c28c32742e",
+  "actualFlagged": false,
+  "offlineControlFlagged": true,
+  "proofBytes": 4147,
+  "proofSha256": "733bcef3ac73085be5461503d7113b39d166e27f4fee41afc8a71b31b7b5e801",
+  "transcriptSha256": "9112606753c3faf46482a0f92bd3e30323b0cdd97c91dc7236791011424673b8"
+}
