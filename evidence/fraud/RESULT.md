@@ -51,7 +51,8 @@ compete with it.
 - Rebond restored bondUqor=1000000000.
 - Replacement batch 2 (fraud=false, stateRoot 40dd6411...e02b, same as batch 1)
   submitted at 10320478; consumed=5. Watcher logged it and was stopped manually.
-- Finalization of the replacement is pending (~1 h challenge window).
+- Replacement batch 2 finalized at block 10323001 (seen 2026-11-18 15:28 UTC):
+  status=finalized, consumed=5, head=5, bondUqor=1000000000.
 
 ## Net cost to the team
 
