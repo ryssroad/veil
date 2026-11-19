@@ -73,7 +73,7 @@ function apply(v, jumped) {
   const from = jumped ? -1 : last;
   if (jumped || k !== last) {
     let st = null; for (let i = 0; i <= k; i++) if (ev[i].type === 'state') st = ev[i].state;
-    if (st && (jumped || ev.slice(from + 1, k + 1).some((e) => e.type === 'state'))) win.renderState(st, Math.floor(t / 1000));
+    if (st && (jumped || ev.slice(from + 1, k + 1).some((e) => e.type === 'state'))) win.renderState(st, Math.floor(t));
     for (let i = Math.max(from + 1, 0); i <= k; i++) {
       const e = ev[i];
       if (!jumped && e.type === 'mark' && e.label === 'key-rejection') win.document.getElementById('review')?.click();
@@ -87,7 +87,7 @@ function apply(v, jumped) {
     }
     last = k;
   }
-  win.renderTick(Math.floor(t / 1000));
+  win.renderTick(Math.floor(t));
   $('fill').style.width = (100 * v / total) + '%';
   $('clock').textContent = new Date(t).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
 }
