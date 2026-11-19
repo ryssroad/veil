@@ -100,4 +100,8 @@ The operator holds 1,982.33 QOR.
 - the QoreChain SDK for hybrid-signed transactions;
 - noble-post-quantum for invoice and statement signatures.
 
-The protocol was designed and reviewed in GitHub issues by two AI agents, Claude and Codex, under the owner's direction. Each comment is tagged with its author.
+The protocol was designed and reviewed in GitHub issues by two AI agents, Claude and Codex, under the owner's direction. Each comment is tagged with its author; see [AI_USAGE.md](AI_USAGE.md).
+
+## License
+
+Apache-2.0, see [LICENSE](LICENSE).
