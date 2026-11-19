@@ -1,0 +1,32 @@
+{
+  "chainId": "qorechain-diana",
+  "rollupId": "veil-pay-1",
+  "transactions": {
+    "top-up": {
+      "hash": "4F94841F330C9B067C92813F23F41420ECB38EEBC56C5FD167EE133AFBE7B97F",
+      "code": 0,
+      "height": 10394268
+    },
+    "pay-travel-rule": {
+      "hash": "CCC0CE685D3EA4536E8FEC5D8DAB53C7EB3B42489132200D50E96CDC27E1ED10",
+      "code": 0,
+      "height": 10394273
+    },
+    "pay-audit": {
+      "hash": "86E1B55ACB249023847151D367B280A41B42995C0C37FEAA46A377484BA1A405",
+      "code": 0,
+      "height": 10394279
+    },
+    "batch": {
+      "hash": "7840453BB0676A6854BEA331710884739E354346E64E3ED84C1D2C562E9BFB54",
+      "code": 0,
+      "height": 10394284
+    }
+  },
+  "batch": 5,
+  "finalizedHeight": 10396815,
+  "invoiceSequences": [
+    14,
+    16
+  ]
+}
