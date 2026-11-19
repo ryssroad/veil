@@ -2,7 +2,12 @@
 
 **Private invoices for public payments on a QoreChain optimistic rollup.**
 
-A payment on a qledger-v1 rollup is public: anyone can see that account A paid account B 0.3 QOR. What the payment *was for* — the invoice — usually travels off-chain and can be forged, lost or disputed. Veil posts the invoice next to the payment, sealed with ML-KEM-1024 to exactly two readers: the payee and an auditor. The payer signs it with the same ML-DSA-44 key that signed the transfer, and the envelope is bound to the exact transfer bytes. A reader accepts an invoice only once those bytes have executed, the batch is final and its post-quantum settlement receipt verifies.
+Every payment needs two things: someone must enforce that only the owner can move the money, and someone must know what the money was for. Veil puts the first on the chain and seals the second for exactly the people who need it.
+
+- **The chain enforces authorization.** Payments are qledger-v1 transfers signed with ML-DSA-44. If a batch moves funds without the owner's signature, any watchtower can prove it, and Diana rejects the batch and slashes the operator's bond. We demonstrated this live: our operator submitted a batch that drained a payer without a signature, and it was rejected two blocks later with 1,000 QOR slashed.
+- **Only the payee and an auditor can read the meaning.** The invoice (who, what for, reference numbers) is sealed with ML-KEM-1024 to exactly two readers. It is signed by the payer's transfer key and bound to the exact transfer bytes, and a reader accepts it only after those bytes executed in a finalized batch whose settlement receipt verifies. Because the ciphertext stays on a public chain forever, it has to resist harvest-now-decrypt-later, which is why the sealing is post-quantum.
+
+A typical case is a Travel Rule-style transfer between two providers: the transfer stays publicly verifiable, while the originator and beneficiary details reach only the receiving provider and the compliance auditor.
 
 Everything below ran on **QoreChain Diana** (testnet) on rollup [`veil-pay-1`](https://api-testnet.qore.host/qorechain/rdk/v1/rollup/veil-pay-1), a based qledger-v1 optimistic rollup with fraud proofs. Track: **Protocol Builders**.
 
@@ -20,6 +25,20 @@ Everything below ran on **QoreChain Diana** (testnet) on rollup [`veil-pay-1`](h
 | 8 | **No censorship of third-party posts.** An outside account posted a probe to our inbox (entry 12). The operator's next batch (4) included it; it finalized at 10,345,225. | [batch 4](https://api-testnet.qore.host/qorechain/rdk/v1/batch/veil-pay-1/4) |
 
 The roots of batches 0–1 are reproduced from the raw inbox bytes by two independent implementations: RDK in Node, and [a Python replay](./tools/replay_independent.py) that shares no code with it. The forged and honest roots of batch 2 and the commitments of batches 3–4 were recomputed the same way during review. The step-by-step reviews are in [issue #3](https://github.com/ryssroad/veil/issues/3), [#1](https://github.com/ryssroad/veil/issues/1) and [#2](https://github.com/ryssroad/veil/issues/2).
+
+## Why this trust model
+
+Rollups that hide everything usually prove that a batch is arithmetically consistent, but in-circuit signature checks are expensive, so who authorized each transfer is often left to the operator and its watchtowers. Veil makes the opposite trade:
+
+| | Veil |
+|---|---|
+| Who authorizes a transfer | The owner's ML-DSA-44 signature, re-checked by Diana in every fraud proof |
+| What a dishonest operator can do | Nothing that survives a challenge: forged batches are rejected and the operator is slashed |
+| Who can read payment details | The payee and an auditor named in the invoice. The operator and watchtowers cannot |
+| What stays public | Accounts, amounts and timing, so anyone can audit the ledger itself |
+| Cost of the trade | Amounts are public; finality takes the 1-hour challenge window |
+
+Veil is for payments that must stay publicly verifiable while their purpose stays private.
 
 ## How it works
 
