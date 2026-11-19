@@ -5,7 +5,8 @@
   "version": "0.1.0",
   "scripts": {
     "audit": "node audit.mjs",
-    "test": "node --test invoice.test.mjs veil.test.mjs"
+    "test": "node --test invoice.test.mjs veil.test.mjs desk/model.test.mjs",
+    "desk": "node desk/server.mjs"
   },
   "dependencies": {
     "@cosmjs/stargate": "0.39.0",

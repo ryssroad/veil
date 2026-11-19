@@ -6,6 +6,14 @@ A payment on a qledger-v1 rollup is public: anyone can see that account A paid a
 
 Everything below ran on **QoreChain Diana** (testnet) on rollup [`veil-pay-1`](https://api-testnet.qore.host/qorechain/rdk/v1/rollup/veil-pay-1), a based qledger-v1 optimistic rollup with fraud proofs. Track: **Protocol Builders**.
 
+## Veil Desk
+
+Run `npm ci` and `npm run desk` in a checkout with the existing v1 reader files. Open **http://127.0.0.1:8788**. The Desk reads Diana, replays the inbox and opens invoices locally. The payer seed is `.private/payer-l2.seed`. The payee and auditor directories default to `.private/clients/payee` and `.private/clients/auditor`. Override them with `VEIL_PAYEE_DIR` and `VEIL_AUDITOR_DIR`. Set `VEIL_AUDITOR` to select another registered auditor.
+
+The default session is read-only. To enable Pay, Top up and Submit batch, start the server with `VEIL_OPERATOR_MNEMONIC` set to the **path** of the rollup creator’s mnemonic file. Inspect key rejection jumps to a previously rejected substitution and shows the current binding. Export CSV includes verified invoices in the selected batch or all batches.
+
+Start `npm run desk -- --record demo` to record the dashboard and use **Mark scene** to label moments. The local JSONL in `video/sessions/` contains decrypted demo invoices. Open `/?replay` and inject each recorded state via `window.renderState(event.state, event.t)`, advancing the clock with `window.renderTick(event.t)`. Recording timestamps use epoch milliseconds.
+
 ## What ran on Diana
 
 | # | What | Evidence |

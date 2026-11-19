@@ -1,0 +1,1256 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Veil Desk · Diana</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #101211;
+        --panel: #181b19;
+        --line: #333934;
+        --text: #eef1e9;
+        --muted: #a4afa5;
+        --lime: #c5f68e;
+        --green: #a4dfa7;
+        --amber: #f3c982;
+        --red: #ffaca1;
+        --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+        font:
+          14px/1.45 Inter,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      .shell {
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        padding: 0 22px 18px;
+        max-width: 2300px;
+        margin: auto;
+      }
+      .mast,
+      .operator,
+      .split,
+      .identity,
+      .toolbar,
+      .rowtitle,
+      .tags {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .mast {
+        height: 76px;
+        flex: none;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 13px;
+        font-size: 23px;
+        letter-spacing: -1.2px;
+        font-weight: 640;
+      }
+      .brand b {
+        font-weight: 400;
+        color: var(--muted);
+      }
+      .mark {
+        width: 33px;
+        height: 32px;
+        background: repeating-linear-gradient(105deg, var(--lime) 0 3px, transparent 3px 6px);
+        clip-path: polygon(0 4%, 100% 4%, 54% 98%, 43% 98%);
+      }
+      .network,
+      .pill,
+      .badge {
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 3px 8px;
+        font-size: 11px;
+        white-space: nowrap;
+        font-weight: 550;
+      }
+      .network {
+        font: 12px var(--mono);
+        color: var(--muted);
+      }
+      .mast .tags {
+        gap: 12px;
+      }
+      .dot {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        border-radius: 100%;
+        background: currentColor;
+        margin-right: 6px;
+      }
+      .ok,
+      .bound,
+      .finalized,
+      .verified,
+      .executed {
+        color: var(--green);
+      }
+      .submitted,
+      .warn,
+      .challenged {
+        color: var(--amber);
+      }
+      .bad,
+      .rejected,
+      .conflict,
+      .unverified,
+      .no-op {
+        color: var(--red);
+      }
+      .pending,
+      .ignored,
+      .opaque {
+        color: var(--muted);
+      }
+      .rec {
+        color: var(--red);
+        letter-spacing: 0.08em;
+      }
+      .operator {
+        min-height: 73px;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+        flex: none;
+      }
+      .operator strong,
+      .eyebrow {
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 650;
+      }
+      .operator .metrics {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .actions {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      button,
+      select,
+      input,
+      textarea {
+        font: inherit;
+        color: var(--text);
+      }
+      button,
+      .button {
+        border: 1px solid #465046;
+        background: #282e28;
+        color: var(--text);
+        font-weight: 550;
+        border-radius: 6px;
+        cursor: pointer;
+        padding: 7px 11px;
+        text-decoration: none;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      button:hover:not(:disabled),
+      .button:hover {
+        background: #364034;
+        border-color: #788771;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.48;
+      }
+      button:focus-visible,
+      select:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible,
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--lime);
+        outline-offset: 2px;
+      }
+      .primary {
+        background: var(--lime);
+        border-color: var(--lime);
+        color: #172210;
+      }
+      .primary:hover:not(:disabled) {
+        background: #d6ffa7;
+      }
+      .primary:disabled {
+        opacity: 0.6;
+      }
+      .columns {
+        min-height: 0;
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr 1.08fr 1fr 1.08fr;
+        gap: 10px;
+      }
+      .panel {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .panelhead {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        padding: 17px 15px;
+        border-bottom: 1px solid var(--line);
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      h1 {
+        font-size: inherit;
+        font-weight: inherit;
+      }
+      h2 {
+        font-size: 20px;
+        letter-spacing: -0.7px;
+        line-height: 1.2;
+      }
+      h3 {
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: -0.15px;
+      }
+      .glyph {
+        height: 32px;
+        width: 32px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #424b40;
+        border-radius: 8px;
+        background: #252c24;
+        color: #cee4cc;
+        font: 21px/1 var(--mono);
+      }
+      .public .glyph {
+        background: #282c30;
+        color: #b9c9db;
+      }
+      .payee .glyph {
+        background: #2a2c20;
+        color: #d7dfb1;
+      }
+      .auditor .glyph {
+        background: #2c2930;
+        color: #d7c9df;
+      }
+      .scope {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      .scroll {
+        overflow: auto;
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+        scrollbar-color: #465046 transparent;
+        padding: 15px;
+        min-height: 0;
+      }
+      .block + .block {
+        margin-top: 19px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+      .balance {
+        background: linear-gradient(115deg, #303c29, #232b22);
+        border: 1px solid #46513f;
+        border-radius: 7px;
+        padding: 13px 14px;
+      }
+      .big {
+        font-size: 32px;
+        letter-spacing: -1.8px;
+        font-weight: 600;
+        line-height: 1.3;
+        margin: 6px 0;
+      }
+      .big small {
+        font-size: 14px;
+        letter-spacing: 0;
+        color: #cad8c4;
+      }
+      .split,
+      .rowtitle,
+      .toolbar {
+        justify-content: space-between;
+      }
+      .split {
+        align-items: baseline;
+      }
+      .mono,
+      code,
+      time,
+      .amount,
+      .sub {
+        font-family: var(--mono);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+      code {
+        color: #d4dfd0;
+        overflow-wrap: anywhere;
+      }
+      .small,
+      .hint,
+      .field,
+      .meta {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .hint {
+        margin-top: 7px;
+      }
+      .field {
+        display: block;
+        margin: 12px 0 5px;
+      }
+      .fieldline {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+      }
+      .inputs {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .inputs input {
+        min-width: 0;
+        flex: 1;
+      }
+      input,
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid #3c453c;
+        background: #111512;
+        border-radius: 5px;
+        padding: 8px 9px;
+        font-size: 13px;
+      }
+      select {
+        cursor: pointer;
+      }
+      textarea {
+        resize: vertical;
+        min-height: 71px;
+        line-height: 1.45;
+      }
+      input.mono {
+        font-size: 12px;
+      }
+      .wide {
+        width: 100%;
+        margin-top: 12px;
+      }
+      .keybox,
+      .ticket,
+      .feeditem,
+      .empty,
+      .notice {
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 11px;
+        background: #1d211e;
+      }
+      .keybox {
+        margin-top: 11px;
+      }
+      .kv {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 6px;
+      }
+      .kv span:first-child {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .list {
+        display: grid;
+        gap: 7px;
+        margin-top: 10px;
+      }
+      .rowtitle {
+        gap: 5px;
+      }
+      .rowtitle strong {
+        font-size: 13px;
+      }
+      .pill {
+        padding: 2px 6px;
+        font-size: 10px;
+        background: #202620;
+      }
+      .feeditem {
+        border-left: 2px solid #465146;
+      }
+      .feeditem[data-kind='envelope'] {
+        border-left-color: #8c9aa5;
+      }
+      .feeditem[data-kind='transfer'] {
+        border-left-color: #a3c784;
+      }
+      .feeditem.target {
+        outline: 2px solid var(--red);
+        outline-offset: -1px;
+      }
+      .sub {
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .detail {
+        margin-top: 6px;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+      }
+      .footer {
+        border-top: 1px solid var(--line);
+        padding: 9px 15px;
+        font-size: 11px;
+        color: var(--muted);
+        flex: none;
+      }
+      .public .scroll {
+        flex: 1;
+      }
+      .ticket .value {
+        font-size: 18px;
+        font-weight: 625;
+        letter-spacing: -0.6px;
+      }
+      .ticket summary {
+        cursor: pointer;
+        font-size: 12px;
+        color: #e2ebdd;
+      }
+      .ticket details {
+        margin-top: 10px;
+        border-top: 1px solid var(--line);
+        padding-top: 7px;
+      }
+      .checks {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 3px 9px;
+        margin-top: 7px;
+        font-size: 10px;
+        color: var(--green);
+      }
+      .checks span {
+        white-space: nowrap;
+      }
+      .description {
+        font-size: 13px;
+        margin: 6px 0;
+        overflow-wrap: anywhere;
+      }
+      .empty {
+        font-size: 12px;
+        color: var(--muted);
+        background: #191d19;
+      }
+      .notice {
+        color: var(--amber);
+        margin-bottom: 9px;
+      }
+      .toolbar select {
+        width: auto;
+        max-width: 55%;
+        font-size: 12px;
+      }
+      .toolbar {
+        flex-wrap: wrap;
+      }
+      .ledger {
+        border-spacing: 0;
+        width: 100%;
+        margin-top: 8px;
+        font-size: 12px;
+      }
+      .ledger td,
+      .ledger th {
+        text-align: left;
+        vertical-align: top;
+        padding: 8px 3px;
+        border-bottom: 1px solid var(--line);
+      }
+      .ledger th {
+        font-weight: 500;
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .ledger td:last-child,
+      .ledger th:last-child {
+        text-align: right;
+      }
+      .ledger .description {
+        font-size: 12px;
+      }
+      .rowtitle .meta {
+        font-size: 11px;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font: 11px/1.5 var(--mono);
+        color: #d7dfd5;
+      }
+      .hidden,
+      [hidden] {
+        display: none !important;
+      }
+      .banner {
+        padding: 8px 12px;
+        margin-bottom: 8px;
+        border: 1px solid #655139;
+        border-radius: 5px;
+        color: var(--amber);
+        font-size: 12px;
+      }
+      .feedback {
+        position: fixed;
+        z-index: 2;
+        bottom: 22px;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: 90vw;
+        background: #29312a;
+        border: 1px solid #60705c;
+        border-radius: 7px;
+        padding: 11px 16px;
+        box-shadow: 0 6px 22px #0008;
+      }
+      .feedback a {
+        color: var(--lime);
+      }
+      .feedback button {
+        margin-left: 10px;
+        padding: 1px 5px;
+      }
+      .error {
+        color: var(--red);
+      }
+      dialog {
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--panel);
+        color: var(--text);
+        max-width: 360px;
+      }
+      dialog::backdrop {
+        background: #0009;
+      }
+      dialog .actions {
+        margin-top: 13px;
+        justify-content: flex-end;
+      }
+      .operator button,
+      .toolbar .button {
+        white-space: nowrap;
+      }
+      @media (max-width: 1180px) {
+        .shell {
+          height: auto;
+          min-height: 100dvh;
+          padding: 0 12px 12px;
+        }
+        .columns {
+          grid-template-columns: 1fr 1fr;
+        }
+        .panel {
+          height: 690px;
+        }
+        .operator {
+          padding: 12px 0;
+        }
+        .mast {
+          height: 62px;
+        }
+      }
+      @media (max-width: 650px) {
+        .columns {
+          grid-template-columns: 1fr;
+        }
+        .panel {
+          height: auto;
+          max-height: 78dvh;
+        }
+        .mast .network {
+          display: none;
+        }
+        .actions {
+          margin-left: 0;
+          flex-wrap: wrap;
+        }
+        .operator .metrics {
+          gap: 7px;
+        }
+        .operator {
+          gap: 8px;
+        }
+        .brand {
+          font-size: 21px;
+        }
+        .footer {
+          margin-top: auto;
+        }
+        .shell {
+          padding: 0 9px 12px;
+        }
+      }
+      @media (min-width: 1181px) and (max-height: 960px) {
+        .payer .scroll {
+          padding: 12px 15px;
+        }
+        .payer .balance {
+          padding: 9px 12px;
+        }
+        .payer .big {
+          margin: 1px 0;
+        }
+        .payer .field {
+          margin: 7px 0 3px;
+        }
+        .payer .block + .block {
+          margin-top: 12px;
+          padding-top: 11px;
+        }
+        .payer textarea {
+          min-height: 56px;
+          height: 56px;
+        }
+        .payer .keybox {
+          margin-top: 5px;
+          padding: 6px 9px;
+        }
+        .payer input,
+        .payer select {
+          padding: 6px 8px;
+        }
+        .payer .kv {
+          margin-top: 2px;
+        }
+        .payer .wide {
+          margin-top: 7px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="mast">
+        <div class="brand">
+          <span class="mark" aria-hidden="true"></span>
+          <h1>Veil <b>Desk</b></h1>
+        </div>
+        <div class="tags">
+          <span class="network">veil-pay-1</span
+          ><span class="small" id="connection" role="status">Connecting to Diana…</span
+          ><span class="badge rec" id="rec" hidden>● REC</span>
+        </div>
+      </header>
+      <section class="operator" aria-label="Operator controls">
+        <strong>Operator</strong>
+        <div class="metrics" id="metrics">Reading inbox…</div>
+        <div class="actions">
+          <button id="mark" hidden>Mark scene</button><button id="review" disabled>Inspect key rejection</button
+          ><button id="batch" disabled>Submit batch</button>
+        </div>
+      </section>
+      <div class="banner" id="banner" role="status" hidden></div>
+      <div class="columns">
+        <section class="panel payer">
+          <header class="panelhead">
+            <span class="glyph" aria-hidden="true">↗</span>
+            <div>
+              <h2>Payer</h2>
+              <p class="scope">Payment origination</p>
+            </div>
+          </header>
+          <div class="scroll">
+            <div class="block">
+              <div class="balance">
+                <div class="eyebrow">Available L2 balance</div>
+                <div class="big"><span id="balance">—</span> <small>QOR</small></div>
+                <div id="payerid" class="split sub">Waiting for replay…</div>
+              </div>
+              <label class="field" for="fund">Top-up amount · QOR</label>
+              <div class="inputs">
+                <input id="fund" inputmode="decimal" value="2" /><button id="topup" disabled>Top up</button>
+              </div>
+            </div>
+            <form id="payment" class="block">
+              <h3>New payment</h3>
+              <label class="field" for="payto">Payee account</label
+              ><input id="payto" class="mono" spellcheck="false" autocomplete="off" />
+              <label class="field" for="amount">Amount · QOR</label
+              ><input id="amount" value="0.3" inputmode="decimal" />
+              <label class="field" for="preset">Invoice preset</label
+              ><select id="preset">
+                <option value="0">Travel Rule transfer</option>
+                <option value="1">Audit services invoice</option>
+              </select>
+              <div class="fieldline">
+                <label class="field" for="description">Description</label><span class="sub" id="count"></span>
+              </div>
+              <textarea id="description"></textarea>
+              <p class="small error" id="invalid"></p>
+              <div class="keybox">
+                <div class="eyebrow">Declared auditor</div>
+                <div id="declaration" class="sub">Reading registry…</div>
+              </div>
+              <button id="pay" class="primary wide" disabled>Pay</button>
+              <p class="hint" id="signing"></p>
+            </form>
+          </div>
+        </section>
+        <section class="panel public">
+          <header class="panelhead">
+            <span class="glyph" aria-hidden="true">≋</span>
+            <div>
+              <h2>Public view</h2>
+              <p class="scope">On-chain inbox</p>
+            </div>
+          </header>
+          <div class="scroll" id="public"><div class="small">Reading chain entries…</div></div>
+          <div class="footer" id="publicfoot">Inbox · awaiting Diana</div>
+        </section>
+        <section class="panel payee">
+          <header class="panelhead">
+            <span class="glyph" aria-hidden="true">↙</span>
+            <div>
+              <h2>Payee</h2>
+              <p class="scope">Beneficiary reader</p>
+            </div>
+          </header>
+          <div class="scroll" id="beneficiary"><div class="small">Checking reader binding…</div></div>
+        </section>
+        <section class="panel auditor">
+          <header class="panelhead">
+            <span class="glyph" aria-hidden="true">⊙</span>
+            <div>
+              <h2>Auditor</h2>
+              <p class="scope">Declared invoice register</p>
+            </div>
+          </header>
+          <div class="scroll" id="audit"><div class="small">Opening declared invoices…</div></div>
+        </section>
+      </div>
+    </main>
+    <div id="toast" class="feedback" role="status" hidden></div>
+    <dialog id="scene">
+      <label for="sceneLabel">Scene label</label><input id="sceneLabel" maxlength="100" />
+      <div class="actions"><button id="cancel">Cancel</button><button id="save">Mark scene</button></div>
+    </dialog>
+    <script>
+      'use strict';
+      const $ = (id) => document.getElementById(id);
+      const presets = [
+        'TR | orig: Alma Exchange LLP (KZ) | benef: Nordic Custody AB (SE) | ref TX-2026-1142',
+        'Invoice INV-0425 | smart-contract audit, phase 2 | net 30',
+      ];
+      const escapeHtml = (v) =>
+        String(v ?? '').replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+        );
+      const short = (v) =>
+        !v
+          ? '—'
+          : '<code title="' +
+            escapeHtml(v) +
+            '">' +
+            escapeHtml(v.length > 14 ? v.slice(0, 8) + '…' + v.slice(-4) : v) +
+            '</code>';
+      const pill = (v) => '<span class="pill ' + escapeHtml(v) + '">' + escapeHtml(v) + '</span>';
+      const kv = (k, html) => '<div class="kv"><span>' + k + '</span><span>' + html + '</span></div>';
+      const empty = (message) => '<p class="empty">' + escapeHtml(message) + '</p>';
+      const qor = (n) => {
+        const v = BigInt(n);
+        return (
+          String(v / 1000000n) +
+          String(v % 1000000n)
+            .padStart(6, '0')
+            .replace(/0+$/, '')
+            .replace(/^(.+)$/, '.$1')
+        );
+      };
+      const at = (t) => {
+        const d = new Date(t);
+        return Number.isNaN(+d) ? '—' : d.toISOString().slice(0, 19).replace('T', ' ') + ' UTC';
+      };
+      let current,
+        localBusy,
+        fetching = false,
+        offline = true,
+        viewKey,
+        selectedBatch = '',
+        replay = false,
+        clockTime;
+      const clock = () => clockTime ?? Date.now();
+      function remaining(b) {
+        if (!b || b.status !== 'submitted') return '';
+        if (!b.deadline) return 'until height ' + b.deadlineHeight;
+        const sec = Math.max(0, b.deadline - Math.floor(clock() / 1000));
+        return sec
+          ? Math.floor(sec / 3600) + 'h ' + Math.floor((sec % 3600) / 60) + 'm ' + (sec % 60) + 's'
+          : 'awaiting finalization';
+      }
+      function countdown(b) {
+        return b?.status === 'submitted' ? ' <span class="sub" data-clock="' + b.index + '"></span>' : '';
+      }
+      function updateClocks() {
+        if (current)
+          for (const el of document.querySelectorAll('[data-clock]'))
+            el.textContent = remaining(current.batches.find((b) => String(b.index) === el.dataset.clock));
+      }
+      function info(e) {
+        if (e.kind === 'transfer')
+          return (
+            pill(e.executed ? 'executed' : 'no-op') +
+            ' <b>' +
+            qor(e.amount) +
+            ' QOR</b><br>' +
+            short(e.from) +
+            ' → ' +
+            short(e.to) +
+            ' · nonce ' +
+            escapeHtml(e.nonce)
+          );
+        if (e.kind === 'deposit') return '<b>' + qor(e.amount) + ' QOR</b> → ' + short(e.account);
+        if (e.kind === 'envelope') return pill('opaque') + ' ' + e.bytes + ' B · ' + e.slots + ' reader slots';
+        if (e.kind === 'reader key')
+          return (
+            pill(e.result) +
+            ' ' +
+            (e.account
+              ? (e.result === 'rejected' ? 'Claimed ' : '') + short(e.account) + ' · key ' + short(e.fingerprint)
+              : '') +
+            (e.reason ? '<br>' + escapeHtml(e.reason) : '')
+          );
+        return e.bytes + ' B · <code>' + escapeHtml(e.preview) + '</code>';
+      }
+      function renderPublic(s) {
+        $('public').innerHTML =
+          '<div class="rowtitle"><h3>Inbox entries</h3><span class="sub">Newest first</span></div><div class="list">' +
+          s.entries
+            .map((e) => {
+              const b = s.batches.find((b) => b.index === e.batch);
+              return (
+                '<article class="feeditem" id="entry-' +
+                e.sequence +
+                '" data-kind="' +
+                escapeHtml(e.kind) +
+                '"><div class="rowtitle"><strong><span class="sub">#' +
+                e.sequence +
+                '</span> ' +
+                escapeHtml(e.kind[0].toUpperCase() + e.kind.slice(1)) +
+                '</strong>' +
+                pill(b?.status || 'pending') +
+                '</div><div class="sub">H ' +
+                escapeHtml(e.height) +
+                ' · ' +
+                short(e.poster) +
+                '</div><div class="detail">' +
+                info(e) +
+                '</div>' +
+                (b
+                  ? '<div class="sub">Batch ' + b.index + ' · ' + escapeHtml(b.status) + ' at ' + b.height + '</div>'
+                  : '') +
+                '</article>'
+              );
+            })
+            .join('') +
+          '</div>';
+        $('publicfoot').innerHTML =
+          'Head <code>' +
+          s.inbox.head +
+          '</code> · Consumed <code>' +
+          s.inbox.consumed +
+          '</code> · Bond <code>' +
+          qor(s.bond) +
+          ' QOR</code> · Latest batch <code>' +
+          (s.batches.at(-1)?.index ?? '—') +
+          '</code>';
+      }
+      const labels = {
+        rollupLayerBinding: 'Layer binding',
+        batchStateRoot: 'State root',
+        anchorOnChain: 'Chain anchor',
+        creatorAuthority: 'Creator authority',
+        pqcSignature: 'PQC signature',
+        chainBinding: 'Chain binding',
+      };
+      function receipt(r, s) {
+        const b = s.batches.find((b) => b.index === r.batch);
+        if (r.status === 'verified')
+          return (
+            '<div class="small ok">Finalized · receipt verified</div><div class="checks">' +
+            Object.entries(r.receiptChecks)
+              .map(([k, v]) => '<span>' + (v ? '✓ ' : '× ') + escapeHtml(labels[k] || k) + '</span>')
+              .join('') +
+            '</div>'
+          );
+        if (r.status === 'pending') return '<div class="small">Sealed, not yet in a batch</div>';
+        if (r.status === 'submitted')
+          return '<div class="small warn">In batch ' + r.batch + ' · challenge window' + countdown(b) + '</div>';
+        return '<div class="small error">' + escapeHtml(r.reason || r.status) + '</div>';
+      }
+      function renderPayee(s) {
+        const p = s.payee;
+        const warning = p.warning ? '<p class="notice">' + escapeHtml(p.warning) + '</p>' : '';
+        $('beneficiary').innerHTML =
+          warning +
+          '<div class="block"><div class="rowtitle"><h3>Reader binding</h3>' +
+          pill(p.warning ? 'unverified' : 'bound') +
+          '</div>' +
+          kv('Account', short(p.account)) +
+          kv('Reader key', short(p.fingerprint)) +
+          kv('Binding statement', p.sequence ? '#' + p.sequence : '—') +
+          '</div><div class="block"><div class="rowtitle"><h3>Received invoices</h3><span class="sub">' +
+          p.rows.length +
+          '</span></div><div class="list">' +
+          (p.rows
+            .map(
+              (r) =>
+                '<article class="ticket"><div class="rowtitle"><span class="value">' +
+                qor(r.invoice.amountUqor) +
+                ' QOR</span>' +
+                pill(r.status) +
+                '</div><p class="description">' +
+                escapeHtml(r.invoice.description) +
+                '</p><p class="sub">#' +
+                r.sequence +
+                ' · batch ' +
+                (r.batch ?? '—') +
+                ' · ' +
+                escapeHtml(r.import || 'awaiting import') +
+                '</p>' +
+                receipt(r, s) +
+                '<details id="invoice-' +
+                r.sequence +
+                '"><summary>Full invoice</summary><pre>' +
+                escapeHtml(JSON.stringify(r.invoice, null, 2)) +
+                '</pre></details></article>',
+            )
+            .join('') || empty('No invoices for this reader.')) +
+          '</div></div>' +
+          skipped(p.skipped);
+      }
+      function skipped(rows) {
+        return (
+          '<div class="block"><div class="rowtitle"><h3>Skipped entries</h3><span class="sub">' +
+          rows.length +
+          '</span></div><div class="list">' +
+          (rows
+            .map(
+              (r) =>
+                '<div class="empty"><b>#' +
+                r.sequence +
+                '</b> · ' +
+                escapeHtml(r.reason.startsWith('open:') ? 'Sealed to other keys' : r.reason) +
+                '</div>',
+            )
+            .join('') || empty('No skipped entries.')) +
+          '</div></div>'
+        );
+      }
+      function renderAuditor(s) {
+        const a = s.auditor;
+        const batches = [...new Set(a.rows.map((r) => r.batch).filter((n) => n != null))];
+        if (!batches.some((b) => String(b) === selectedBatch)) selectedBatch = '';
+        const rows = a.rows.filter((r) => selectedBatch === '' || String(r.batch) === selectedBatch);
+        const options = batches
+          .map(
+            (b) =>
+              '<option value="' +
+              b +
+              '"' +
+              (String(b) === selectedBatch ? ' selected' : '') +
+              '>Batch ' +
+              b +
+              '</option>',
+          )
+          .join('');
+        const canExport = rows.some((r) => r.status === 'verified') && !replay;
+        $('audit').innerHTML =
+          (a.warning ? '<p class="notice">' + escapeHtml(a.warning) + '</p>' : '') +
+          '<div class="block"><h3>Registry identity</h3>' +
+          kv('Auditor', short(a.address)) +
+          kv('ML-KEM-1024', short(a.fingerprint)) +
+          '</div><div class="block"><div class="toolbar"><h3>Invoice register</h3><select aria-label="Filter invoices by batch" id="filter"><option value="">All batches</option>' +
+          options +
+          '</select></div>' +
+          (rows.length
+            ? '<table class="ledger"><thead><tr><th>Invoice / parties</th><th>QOR / status</th></tr></thead><tbody>' +
+              rows
+                .map(
+                  (r) =>
+                    '<tr><td><time title="' +
+                    at(r.time) +
+                    '">' +
+                    at(r.time) +
+                    '</time><div class="description">' +
+                    escapeHtml(r.invoice.description) +
+                    '</div>' +
+                    short(r.payer) +
+                    ' → ' +
+                    short(r.invoice.beneficiary) +
+                    '</td><td><b>' +
+                    qor(r.invoice.amountUqor) +
+                    '</b><div>' +
+                    pill(r.status) +
+                    '</div><span class="sub">Batch ' +
+                    (r.batch ?? '—') +
+                    '</span></td></tr>',
+                )
+                .join('') +
+              '</tbody></table>'
+            : empty('No declared invoices.')) +
+          '<div class="rowtitle" style="margin-top:10px"><span class="small">Finalized invoices only</span>' +
+          (canExport
+            ? '<a class="button" href="/api/invoices.csv' +
+              (selectedBatch ? '?batch=' + selectedBatch : '') +
+              '" download>Export CSV ↓</a>'
+            : '<button disabled>Export CSV ↓</button>') +
+          '</div></div>' +
+          skipped(a.skipped) +
+          '<div class="block"><div class="rowtitle"><h3>Import conflicts</h3><span class="sub">' +
+          a.conflicts.length +
+          '</span></div><div class="list">' +
+          (a.conflicts
+            .map(
+              (c) =>
+                '<details><summary class="bad">Conflicting invoice association</summary><pre>' +
+                escapeHtml(JSON.stringify(c, null, 2)) +
+                '</pre></details>',
+            )
+            .join('') || empty('No conflicts recorded.')) +
+          '</div></div>';
+        $('filter').onchange = (e) => {
+          selectedBatch = e.target.value;
+          renderAuditor(s);
+        };
+      }
+      function controls() {
+        const busy = localBusy || current?.busy;
+        const locked = !current?.signing || busy || offline || replay;
+        const d = $('description').value,
+          size = new TextEncoder().encode(d).length;
+        const invalid = /["\\\x00-\x1f\x7f]/u.test(d)
+          ? 'Remove quotes, backslashes or control characters.'
+          : size > 128
+            ? 'Description exceeds 128 bytes.'
+            : '';
+        const money = (v) => /^(0|[1-9]\d{0,13})(\.\d{1,6})?$/.test(v) && Number(v) > 0;
+        $('count').textContent = size + ' / 128 B';
+        $('invalid').textContent = invalid;
+        $('description').setAttribute('aria-invalid', String(Boolean(invalid)));
+        $('pay').disabled = Boolean(
+          locked || invalid || !/^[a-f0-9]{64}$/.test($('payto').value) || !money($('amount').value),
+        );
+        $('topup').disabled = Boolean(locked || !money($('fund').value));
+        $('batch').disabled = Boolean(locked || current.inbox.head <= current.inbox.consumed);
+        $('review').disabled = !current?.entries.some(
+          (e) =>
+            e.kind === 'reader key' &&
+            e.result === 'rejected' &&
+            e.account === current.payee.account &&
+            e.reason.includes('hash of the signing key'),
+        );
+        $('mark').disabled = Boolean(busy || replay || offline);
+        for (const [id, action, title] of [
+          ['pay', 'pay', 'Pay'],
+          ['topup', 'top-up', 'Top up'],
+          ['batch', 'batch', 'Submit batch'],
+          ['mark', 'mark', 'Mark scene'],
+        ]) {
+          $(id).textContent = busy === action ? 'Working…' : title;
+        }
+      }
+      function render(s) {
+        const first = !current;
+        current = s;
+        const key = JSON.stringify(s);
+        if (first) $('payto').value = s.payee.account;
+        if (key !== viewKey) {
+          const expanded = [...document.querySelectorAll('details[open][id]')].map((el) => el.id);
+          viewKey = key;
+          $('balance').textContent = qor(s.payer.balance);
+          $('payerid').innerHTML = short(s.payer.account) + '<span>Nonce ' + escapeHtml(s.payer.nonce) + '</span>';
+          $('declaration').innerHTML =
+            kv('Address', short(s.auditor.address)) + kv('Key fingerprint', short(s.auditor.fingerprint));
+          $('signing').textContent = s.signing ? '' : 'Read-only session · operator signing is off.';
+          $('mark').hidden = $('rec').hidden = !s.recording;
+          const b = s.batches.at(-1);
+          $('metrics').innerHTML =
+            '<span class="small"><code>' +
+            (s.inbox.head - s.inbox.consumed) +
+            '</code> pending</span>' +
+            (b ? '<span class="small">Batch <code>' + b.index + '</code></span>' + pill(b.status) + countdown(b) : '');
+          renderPublic(s);
+          renderPayee(s);
+          renderAuditor(s);
+          for (const id of expanded) if ($(id)) $(id).open = true;
+        }
+        updateClocks();
+        controls();
+      }
+      function toast(message, tx) {
+        $('toast').hidden = false;
+        $('toast').innerHTML =
+          escapeHtml(message) +
+          (tx?.hash && /^[a-f0-9]{64}$/i.test(tx.hash)
+            ? ' <a target="_blank" rel="noreferrer" href="https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/' +
+              tx.hash +
+              '">' +
+              short(tx.hash) +
+              '</a> · code ' +
+              escapeHtml(tx.code)
+            : '') +
+          '<button aria-label="Dismiss notification">×</button>';
+        $('toast').querySelector('button').onclick = () => {
+          $('toast').hidden = true;
+        };
+      }
+      async function refresh() {
+        if (fetching || replay) return;
+        fetching = true;
+        try {
+          const res = await fetch('/api/state');
+          if (!res.ok) throw new Error((await res.json()).error);
+          const s = await res.json();
+          if (replay) return;
+          offline = false;
+          render(s);
+          $('connection').innerHTML = '<span class="ok"><i class="dot"></i>Diana live</span>';
+          $('banner').hidden = true;
+        } catch (err) {
+          if (replay) return;
+          offline = true;
+          controls();
+          $('connection').textContent = 'Diana unavailable';
+          $('banner').textContent = (current ? 'Showing last known state. ' : '') + err.message;
+          $('banner').hidden = false;
+        } finally {
+          fetching = false;
+        }
+      }
+      async function perform(action, fields = {}) {
+        if (localBusy || replay) return;
+        localBusy = action;
+        controls();
+        try {
+          const res = await fetch('/api/action', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-veil': '1' },
+            body: JSON.stringify({ action, ...fields }),
+          });
+          const result = await res.json();
+          toast(result.error || result.message || 'Transaction included', result);
+        } catch {
+          toast('Connection interrupted. Check the inbox before retrying.');
+        } finally {
+          localBusy = null;
+          controls();
+          void refresh();
+        }
+      }
+      $('description').value = presets[0];
+      $('preset').onchange = () => {
+        $('description').value = presets[Number($('preset').value)];
+        controls();
+      };
+      for (const id of ['amount', 'description', 'payto', 'fund']) $(id).oninput = controls;
+      $('payment').onsubmit = (e) => {
+        e.preventDefault();
+        if (!$('pay').disabled)
+          perform('pay', { payee: $('payto').value, amount: $('amount').value, description: $('description').value });
+      };
+      $('topup').onclick = () => perform('top-up', { amount: $('fund').value });
+      $('batch').onclick = () => perform('batch');
+      $('review').onclick = () => {
+        const e = current.entries.find(
+          (e) =>
+            e.kind === 'reader key' &&
+            e.result === 'rejected' &&
+            e.account === current.payee.account &&
+            e.reason.includes('hash of the signing key'),
+        );
+        const el = $('entry-' + e.sequence);
+        el.scrollIntoView({ block: 'nearest' });
+        el.classList.add('target');
+        toast('Entry #' + e.sequence + ' rejected. Current payee binding: statement #' + current.payee.sequence + '.');
+        setTimeout(() => el.classList.remove('target'), 4500);
+      };
+      $('mark').onclick = () => {
+        $('sceneLabel').value = '';
+        $('scene').showModal();
+      };
+      $('cancel').onclick = () => $('scene').close();
+      $('save').onclick = () => {
+        const label = $('sceneLabel').value.trim();
+        if (label) {
+          $('scene').close();
+          perform('mark', { label });
+        }
+      };
+      window.renderState = (s, t) => {
+        replay = true;
+        offline = false;
+        clockTime = t;
+        $('connection').textContent = 'Session replay';
+        $('banner').hidden = true;
+        render(s);
+      };
+      window.renderTick = (t) => {
+        clockTime = t;
+        updateClocks();
+      };
+      controls();
+      if (!new URLSearchParams(location.search).has('replay')) {
+        refresh();
+        setInterval(refresh, 3000);
+        setInterval(updateClocks, 1000);
+      }
+    </script>
+  </body>
+</html>
