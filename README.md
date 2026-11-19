@@ -11,30 +11,6 @@ A typical case is a Travel Rule-style transfer between two providers: the transf
 
 Everything below ran on **QoreChain Diana** (testnet) on rollup [`veil-pay-1`](https://api-testnet.qore.host/qorechain/rdk/v1/rollup/veil-pay-1), a based qledger-v1 optimistic rollup with fraud proofs. Track: **Protocol Builders**.
 
-## Veil Desk
-
-Run `npm ci` and `npm run desk` in a checkout with the existing v1 reader files. Open **http://127.0.0.1:8788**. The Desk reads Diana, replays the inbox and opens invoices locally. The payer seed is `.private/payer-l2.seed`. The payee and auditor directories default to `.private/clients/payee` and `.private/clients/auditor`. Override them with `VEIL_PAYEE_DIR` and `VEIL_AUDITOR_DIR`. Set `VEIL_AUDITOR` to select another registered auditor.
-
-The default session is read-only. To enable Pay, Top up and Submit batch, start the server with `VEIL_OPERATOR_MNEMONIC` set to the **path** of the rollup creator’s mnemonic file. Inspect key rejection jumps to a previously rejected substitution and shows the current binding. Export CSV includes verified invoices in the selected batch or all batches.
-
-Start `npm run desk -- --record demo` to record the dashboard and use **Mark scene** to label moments. The local JSONL in `video/sessions/` contains decrypted demo invoices. Open `/?replay` and inject each recorded state via `window.renderState(event.state, event.t)`, advancing the clock with `window.renderTick(event.t)`. Recording timestamps use epoch milliseconds.
-
-### Operator demo on Diana
-
-To prepare a signing and recording session, stop the existing Desk server, then run this from the repository root with the operator file used by `v1-live.mjs`:
-
-```sh
-VEIL_OPERATOR_MNEMONIC=.private/rollup-operator.mnemonic npm run desk -- --record demo
-```
-
-Starting the server sends no transaction. The **REC** badge and **Mark scene** button appear when recording is active. Signing and recording are independent: omit the environment variable for a read-only recording, or omit `-- --record demo` for signing without recording.
-
-1. In **Payer**, use **Top up** with 2 QOR. Wait for a successful transaction and the refreshed L2 balance.
-2. Pay the bound payee 0.3 QOR using **Travel Rule transfer**. After the payer nonce advances, pay another 0.3 QOR using **Audit services invoice**.
-3. Use **Submit batch** and note the batch number. It becomes available when there are pending entries. Mark the challenge-window scene while the invoices are submitted.
-4. Wait for Diana to finalize the batch. Confirm both invoices show **verified** in both reader columns. Filter the auditor register to that batch and export its CSV.
-5. **Inspect key rejection** jumps to the historical rejected statement at entry 7 and identifies the payee’s binding at entry 6.
-
 ## What ran on Diana
 
 | # | What | Evidence |
@@ -110,6 +86,30 @@ python3 -I tools/replay_independent.py evidence/withdrawal/transcript.jsonl
 ```
 
 None of these needs a key. Decrypting an invoice needs a reader's own seed (`node v1-live.mjs read <dir> payee|auditor <auditor-qor1>`).
+
+## Veil Desk
+
+Run `npm ci` and `npm run desk` in a checkout with the existing v1 reader files. Open **http://127.0.0.1:8788**. The Desk reads Diana, replays the inbox and opens invoices locally. The payer seed is `.private/payer-l2.seed`. The payee and auditor directories default to `.private/clients/payee` and `.private/clients/auditor`. Override them with `VEIL_PAYEE_DIR` and `VEIL_AUDITOR_DIR`. Set `VEIL_AUDITOR` to select another registered auditor.
+
+The default session is read-only. To enable Pay, Top up and Submit batch, start the server with `VEIL_OPERATOR_MNEMONIC` set to the **path** of the rollup creator’s mnemonic file. Inspect key rejection jumps to a previously rejected substitution and shows the current binding. Export CSV includes verified invoices in the selected batch or all batches.
+
+Start `npm run desk -- --record demo` to record the dashboard and use **Mark scene** to label moments. The local JSONL in `video/sessions/` contains decrypted demo invoices. Open `/?replay` and inject each recorded state via `window.renderState(event.state, event.t)`, advancing the clock with `window.renderTick(event.t)`. Recording timestamps use epoch milliseconds.
+
+### Operator demo on Diana
+
+To prepare a signing and recording session, stop the existing Desk server, then run this from the repository root with the operator file used by `v1-live.mjs`:
+
+```sh
+VEIL_OPERATOR_MNEMONIC=.private/rollup-operator.mnemonic npm run desk -- --record demo
+```
+
+Starting the server sends no transaction. The **REC** badge and **Mark scene** button appear when recording is active. Signing and recording are independent: omit the environment variable for a read-only recording, or omit `-- --record demo` for signing without recording.
+
+1. In **Payer**, use **Top up** with 2 QOR. Wait for a successful transaction and the refreshed L2 balance.
+2. Pay the bound payee 0.3 QOR using **Travel Rule transfer**. After the payer nonce advances, pay another 0.3 QOR using **Audit services invoice**.
+3. Use **Submit batch** and note the batch number. It becomes available when there are pending entries. Mark the challenge-window scene while the invoices are submitted.
+4. Wait for Diana to finalize the batch. Confirm both invoices show **verified** in both reader columns. Filter the auditor register to that batch and export its CSV.
+5. **Inspect key rejection** jumps to the historical rejected statement at entry 7 and identifies the payee’s binding at entry 6.
 
 ## Repository
 
