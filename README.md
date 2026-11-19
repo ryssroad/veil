@@ -1,35 +1,103 @@
 # Veil
 
-Veil links a public qledger-v1 payment on QoreChain Diana to a signed invoice sealed for the recipient and auditor. The first experiment transferred **0.25 test QOR** in batch 0 of `veil-pay-1`.
+**Private invoices for public payments on a QoreChain optimistic rollup.**
 
-[Вывод на L1 и данные для воспроизведения](./evidence/withdrawal/RESULT.md) · [Отчёт о проверке на Diana](./DIANA-2026-11-18.md) · [Payment transaction](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/010AB8E43A327097C6C1E71A2626917B84E8AF87F369F4271F3264BDF8CDB268) · [Live batch](https://api-testnet.qore.host/qorechain/rdk/v1/batch/veil-pay-1/0) · [Protocol discussions](https://github.com/ryssroad/veil/issues)
+A payment on a qledger-v1 rollup is public: anyone can see that account A paid account B 0.3 QOR. What the payment *was for* — the invoice — usually travels off-chain and can be forged, lost or disputed. Veil posts the invoice next to the payment, sealed with ML-KEM-1024 to exactly two readers: the payee and an auditor. The payer signs it with the same ML-DSA-44 key that signed the transfer, and the envelope is bound to the exact transfer bytes. A reader accepts an invoice only once those bytes have executed, the batch is final and its post-quantum settlement receipt verifies.
 
-Offline withdrawal replay recomputes both batch roots from the saved transcript. Live verification checks the receipt, finalized batch and L1 payment against Diana. Checking the transcript against the chain also requires comparing its entries to the published inbox commitments.
+Everything below ran on **QoreChain Diana** (testnet) on rollup [`veil-pay-1`](https://api-testnet.qore.host/qorechain/rdk/v1/rollup/veil-pay-1), a based qledger-v1 optimistic rollup with fraud proofs. Track: **Protocol Builders**.
 
-## Verify the payment
+## What ran on Diana
 
-The experiment used Node.js 22.22.3 and the public Diana endpoints. Run these commands from the project directory.
+| # | What | Evidence |
+|---|---|---|
+| 1 | **Sealed invoice payment.** Deposit, a 0.25 QOR transfer and its two-reader envelope (posted in one L1 tx). Batch 0 finalized at 10,306,367; the payee and the auditor each decrypted the same invoice. | [payment tx](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/010AB8E43A327097C6C1E71A2626917B84E8AF87F369F4271F3264BDF8CDB268) · [batch 0](https://api-testnet.qore.host/qorechain/rdk/v1/batch/veil-pay-1/0) · [report](./DIANA-2026-11-18.md) |
+| 2 | **Withdrawal to L1.** The payee withdrew 0.25 QOR. Batch 1 finalized at 10,315,867; `MsgExecuteWithdrawal` paid the L1 address (0 → 250,000 uqor). A second claim of the same withdrawal is refused (`rdk` code 28). | [claim tx](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/AB6F83B99E5CD0EAC1FEC0B1C927ED1C2EBB97C871C1A6FF40DE2536E13625E1) · [report](./evidence/withdrawal/RESULT.md) |
+| 3 | **Settlement receipt.** ML-DSA-87 anchor receipt for batch 1, verified by RDK, by the official `qorollup receipt veil-pay-1 1 --network testnet --verify`, and independently with `dilithium-py`. | [receipt](./evidence/withdrawal/receipt.json) |
+| 4 | **Fraud proof.** The operator deliberately submitted a forged batch 2 that drained the payer's 0.75 QOR into a withdrawal to itself, without the payer's signature. Diana upheld a challenge two blocks later: 1,000 QOR bond slashed (500 burned, 500 to the challenger), inbox rolled back. The honest replacement batch 2 finalized at 10,323,001. | [forged batch](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/8F4BD8EBDA38C7E8E378C952FECA8793ACE9F7D7468B9990447DB6D9F70E081E) · [upheld challenge](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/ED09CB1B9E25020765B057BCF5D7214F5794272F8AB1A25E5A03090F2AD648B9) · [report](./evidence/fraud/RESULT.md) |
+| 5 | **Watchtower.** Our watcher, on a separate account, re-executed batch 2 from chain data alone, built the proof and submitted it in the same block. A third-party watcher's byte-identical challenge was ordered first, so ours failed with "already rejected". | [our challenge](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/0E7400D2D0B42D6972B682C3BBF74232DEE9FD97995CA8EE75965959796A100A) · [watch log](./evidence/fraud/watch.jsonl) |
+| 6 | **Veil v1: reader-key discovery.** The payee published a signed reader-key statement to the inbox (entry 6). A substituted key claiming the payee's account (7) was rejected; a second statement (8) and a re-post of the first (9) were ignored. | [statement](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/83772A205B380782E33FBC4332D236C68F5482D8DBA7219A82CD7E2BD3F8ECFB) · [negatives](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/3A8AA293B3AD9E653F4DDAA46D329516D2F1766BF81F16FB9B19BE2E73D2ECEF) |
+| 7 | **Veil v1: auditor-declared invoice.** The auditor registered its ML-KEM-1024 key in the chain's KEM registry. The payer took the payee's key from the inbox and the auditor's from the registry, and paid 0.3 QOR with the invoice (6,013 B envelope). Batch 3 finalized at 10,336,020. Two clients in separate directories, sharing nothing but the chain, each accepted the same invoice with all receipt checks passing; a repeated import was a no-op duplicate. | [payment tx](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/0B913BF8042BD47C83410F4AFDB2B6571A4D754B4E0B3476B1FF9FEF848B6F31) · [batch 3](https://api-testnet.qore.host/qorechain/rdk/v1/batch/veil-pay-1/3) · [evidence](./evidence/v1/) |
+| 8 | **No censorship of third-party posts.** An outside account posted a probe to our inbox (entry 12). The operator's next batch (4) included it; it finalized at 10,345,225. | [batch 4](https://api-testnet.qore.host/qorechain/rdk/v1/batch/veil-pay-1/4) |
+
+The roots of batches 0–1 are reproduced from the raw inbox bytes by two independent implementations: RDK in Node, and [a Python replay](./tools/replay_independent.py) that shares no code with it. The forged and honest roots of batch 2 and the commitments of batches 3–4 were recomputed the same way during review. The step-by-step reviews are in [issue #3](https://github.com/ryssroad/veil/issues/3), [#1](https://github.com/ryssroad/veil/issues/1) and [#2](https://github.com/ryssroad/veil/issues/2).
+
+## How it works
+
+**Payment.** A normal qledger-v1 transfer: payer, payee, amount and nonce, signed with ML-DSA-44. Diana re-executes it in fraud proofs, so a batch that lies about it can be challenged and the operator's bond slashed.
+
+**Invoice.** The payer signs `sha256(aad ‖ 0x00 ‖ body)` with the transfer's ML-DSA-44 key (context `veil-invoice-v1`), where `aad = [purpose, chainId, rollupId, sha256(transfer)]`. The signature and the body are sealed with QoreSeal (ML-KEM-1024, anonymous slots) to the payee and the auditor. The transfer and the envelope are posted in one L1 transaction, so the envelope is the next inbox entry.
+
+The body is canonical JSON with exactly these keys: `version` (2), `id`, `description` (≤128 B printable text), `amountUqor`, `beneficiary` and `auditorKey`, which is the sha256 of the auditor's registered ML-KEM-1024 key. The worst case fits the 6,144 B post limit (6,135 B), and the size is checked before sealing.
+
+**A reader accepts an invoice when all of these hold:**
+1. its key opens the envelope for this exact transfer, and the envelope has exactly two slots;
+2. the payer's signature verifies and the body is canonical;
+3. the amount and beneficiary equal the transfer's, and `auditorKey` equals the auditor's key in the chain registry;
+4. replaying the inbox, *these exact transfer bytes* executed: the payer's nonce advanced and the funds moved;
+5. the batch containing the transfer is `finalized` and its ML-DSA-87 settlement receipt verifies;
+6. the pairs `(payer, executed nonce)` and `(payer, invoice id)` were not imported before. An exact re-import is a no-op; a conflicting one is flagged.
+
+**Reader keys.** The payee publishes a binary `VRK1` statement (5,369 B) to the inbox. It binds its L2 account to an ML-KEM-1024 key and is signed by the account's ML-DSA-44 key under its own context. The first valid statement per account wins, so replays and later statements change nothing. The auditor is an organization with a `qor1` address and uses the chain's KEM registry.
+
+**What stays public.** The fact of payment, both L2 accounts, the amount, the time, the L1 poster and the message sizes — qledger is a public ledger. What the payment was for is visible only to the payee and the auditor.
+
+**Limits of v1.**
+- `auditorKey` is the payer's signed *declaration*. A reader cannot prove that the second slot really opens for the auditor; confirmed auditor access would need an acknowledgement protocol.
+- Reader keys don't rotate, and the registry key is looked up at its current value.
+- Readers trust the Diana node they query for finality and anchors.
+
+## Verify it yourself
+
+Node.js 22 and the lockfile versions:
 
 ```sh
 npm ci --ignore-scripts
-npm run audit -- public
+npm test                                                      # protocol tests, offline
+node replay-withdrawal.mjs                                    # batches 0-1 from the transcript, offline
+node evidence/watchtower/replay.mjs | diff evidence/watchtower/replay.json -   # watcher decision, offline
+node verify-withdrawal.mjs                                    # receipt, finality, L1 payment (needs Diana)
+node v1-live.mjs status                                       # batches, inbox, reader-key events (needs Diana)
+npm run audit -- public                                       # batch 0 payment and invoice binding (needs Diana)
 ```
 
-Public verification checks the successful L1 transaction, both messages, the inbox commitment, the executed transfer, the finalized state root and the ML-DSA-87 anchor. A reader can additionally authenticate and decrypt the invoice using a 32-byte binary QoreSeal seed. Each reader needs only its own encryption key.
+The independent replay needs Python and `pip install dilithium-py`:
 
 ```sh
-npm run audit -- auditor /path/to/auditor.seed
-npm run audit -- recipient /path/to/recipient.seed
+python3 -I tools/replay_independent.py evidence/withdrawal/transcript.jsonl
 ```
 
-To check a saved receipt supply `--receipt evidence/receipt.json`. The optional `--allow-pending` mode reports the actual batch status while the challenge window is open. The optional `--save` flag records finalized, redacted verification results in `evidence/` and a readable local copy of the invoice in `.private/` for a reader. Keep that directory outside source control.
+None of these needs a key. Decrypting an invoice needs a reader's own seed (`node v1-live.mjs read <dir> payee|auditor <auditor-qor1>`).
 
-## Protocol and scope
+## Repository
 
-The payer signs the exact invoice bytes and a reference to the signed L2 transfer using ML-DSA-44. The reference binds the chain ID, rollup ID and transfer digest. QoreSeal encrypts the signed invoice to two ML-KEM-1024 keys. The operator posts the transfer and the envelope in one Cosmos transaction. The invoice author is authenticated independently of the L1 poster.
+| Path | Purpose |
+|---|---|
+| `veil.mjs`, `veil.test.mjs` | Veil v1: invoice body, sealing and opening, reader-key statements, execution replay, importer |
+| `v1-live.mjs` | v1 live run: clients, auditor registry, statements, payment, batch, reads |
+| `invoice.mjs`, `operator.mjs`, `audit.mjs` | first experiment (batch 0) and its public and reader audits |
+| `withdrawal.mjs`, `replay-withdrawal.mjs`, `verify-withdrawal.mjs` | withdrawal, offline replay, live verification |
+| `fraud-demo.mjs` | forged batch, watchtower, challenge, re-bond, replacement |
+| `tools/replay_independent.py` | independent Python replay |
+| `evidence/` | transaction records, transcripts, receipts, reports |
 
-This verifier covers the first batch of this rollup. The reader keys were provisioned on one test machine and the three inbox entries are publicly recoverable from an indexed Diana endpoint. qledger payment IDs, amounts, posting metadata and balances are public. Receipt verification trusts the configured Diana node for chain state. Separate participant devices, authenticated reader-key discovery, general batch monitoring and rollbacks are tracked in Issues. The first finalized withdrawal has its own replay transcript and verifier linked above.
+## Cost
 
-The operator scripts record the one-time experiment. Running the read-only verifier never requires an operator mnemonic. RDK 0.9.0 implements qledger, commitments, batch planning and receipt verification. QoreSeal 0.1.0 implements the envelope, the QoreChain SDK signs native transactions, and noble-post-quantum signs the invoice.
+Of the 15,000 test QOR allocated:
+- 10,000 is the rollup stake (9,900 escrowed, 100 burned);
+- 1,000 went to layer registration;
+- 1,000 is the active submitter bond;
+- 1,000 was slashed in the fraud demo;
+- 10 funded the watcher and auditor accounts;
+- 1 was the deposit (0.75 still in the pool, 0.25 withdrawn);
+- about 7 went to fees.
 
-[QoreChain RDK](https://github.com/qorechain/qorechain-rdk/tree/v0.9.0) · [QoreSeal](https://github.com/qorechain/qoreseal) · [Diana protocol](https://docs.qorechain.io/rollups/rdk-v328/)
+The operator holds 1,982.33 QOR.
+
+## Built with
+
+- [QoreChain RDK 0.9.0](https://github.com/qorechain/qorechain-rdk/tree/v0.9.0) for qledger, commitments, batches, fraud proofs and receipts;
+- [QoreSeal 0.1.0](https://github.com/qorechain/qoreseal) for the envelopes;
+- the QoreChain SDK for hybrid-signed transactions;
+- noble-post-quantum for invoice and statement signatures.
+
+The protocol was designed and reviewed in GitHub issues by two AI agents, Claude and Codex, under the owner's direction. Each comment is tagged with its author.
