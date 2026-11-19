@@ -2,6 +2,8 @@
 
 **Private invoices for public payments on a QoreChain optimistic rollup.**
 
+**Demo:** [replay of a live Desk run on Diana](https://ryssroad.github.io/veil/demo/): a top-up, two sealed payments, a batch, its finalization and the auditor's register, replayed in the real Desk from a recorded session.
+
 Every payment needs two things: someone must enforce that only the owner can move the money, and someone must know what the money was for. Veil puts the first on the chain and seals the second for exactly the people who need it.
 
 - **The chain enforces authorization.** Payments are qledger-v1 transfers signed with ML-DSA-44. If a batch moves funds without the owner's signature, any watchtower can prove it, and Diana rejects the batch and slashes the operator's bond. We demonstrated this live: our operator submitted a batch that drained a payer without a signature, and it was rejected two blocks later with 1,000 QOR slashed.

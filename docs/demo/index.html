@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Veil Desk · replay of the live run on Diana</title>
+<style>
+  :root { --bg:#090a14; --panel:#10121f; --line:#22253d; --text:#e9ebff; --dim:#8a8fbf; --violet:#8b5cf6; --teal:#2dd4bf; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font:14px/1.4 Inter, system-ui, -apple-system, Segoe UI, sans-serif; }
+  body { display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:14px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); flex-wrap:wrap; }
+  .title { font-weight:600; white-space:nowrap; }
+  .title small { color:var(--dim); font-weight:400; margin-left:6px; }
+  button { background:#1a1d33; color:var(--text); border:1px solid #2c3050; border-radius:8px; padding:6px 11px; font:inherit; cursor:pointer; }
+  button:hover { border-color:var(--violet); }
+  button.on { border-color:var(--violet); background:#221d44; }
+  .scenes { display:flex; gap:6px; flex-wrap:wrap; }
+  .scenes button { font-size:12.5px; padding:4px 9px; }
+  .bar { flex:1; min-width:180px; height:8px; background:#1a1d33; border-radius:99px; position:relative; cursor:pointer; }
+  .bar .fill { position:absolute; inset:0 auto 0 0; background:linear-gradient(90deg,var(--violet),var(--teal)); border-radius:99px; }
+  .bar .tick { position:absolute; top:-3px; width:2px; height:14px; background:#6c7099; }
+  .clock { font:12.5px ui-monospace, Menlo, monospace; color:var(--dim); white-space:nowrap; }
+  .note { padding:7px 16px; font-size:12.5px; color:var(--dim); border-bottom:1px solid var(--line); display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
+  .note a { color:var(--teal); }
+  #act { color:var(--text); }
+  #act .ok { color:var(--teal); }
+  #act .skip { color:#f5b84b; }
+  iframe { flex:1; width:100%; border:0; background:var(--bg); }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">Veil Desk <small>replay of a live run on QoreChain Diana</small></div>
+  <button id="play">▶ Play</button>
+  <div class="scenes" id="scenes"></div>
+  <div class="bar" id="bar"><div class="fill" id="fill"></div></div>
+  <div class="clock" id="clock">–</div>
+</header>
+<div class="note">
+  <span id="act">Every transaction in this replay happened on Diana; hashes link to the chain.</span>
+  <span>Waiting periods are shortened. <a href="https://github.com/ryssroad/veil">Repository</a></span>
+</div>
+<iframe id="desk" src="desk.html?replay" title="Veil Desk"></iframe>
+<script>
+const $ = (id) => document.getElementById(id);
+const REST = 'https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/';
+const GAP = 6000, SQUEEZED = 2500;   // idle gaps longer than 6 s play in 2.5 s
+const LABELS = { intro: 'Start', 'top-up': 'Top up', 'pay-travel-rule': 'Pay · Travel Rule', 'pay-audit': 'Pay · invoice',
+  batch: 'Batch', 'key-rejection': 'Key rejection', finalized: 'Finalized', export: 'Auditor export' };
+const ACTIONS = { 'top-up': 'Top up 2 QOR', pay: 'Pay 0.3 QOR with sealed invoice', batch: 'Submit batch' };
+let S, ev, vt = [], total = 0, pos = 0, playing = false, last = -1, lastFrame = 0, win;
+
+// Virtual timeline: real time, except long idle gaps, which are squeezed.
+function buildTimeline() {
+  const pts = [S.start, ...ev.map((e) => e.t), S.end];
+  let v = 0; vt = [[S.start, 0]];
+  for (let i = 1; i < pts.length; i++) {
+    const d = pts[i] - pts[i - 1];
+    v += d > GAP ? SQUEEZED : d;
+    vt.push([pts[i], v]);
+  }
+  total = v;
+}
+const toVirtual = (t) => { for (let i = 1; i < vt.length; i++) if (t <= vt[i][0]) {
+  const [t0, v0] = vt[i - 1], [t1, v1] = vt[i]; return t1 === t0 ? v1 : v0 + (v1 - v0) * (t - t0) / (t1 - t0); } return total; };
+const toReal = (v) => { for (let i = 1; i < vt.length; i++) if (v <= vt[i][1]) {
+  const [t0, v0] = vt[i - 1], [t1, v1] = vt[i]; return v1 === v0 ? t1 : t0 + (t1 - t0) * (v - v0) / (v1 - v0); } return S.end; };
+
+function apply(v, jumped) {
+  const t = toReal(v);
+  let k = -1; for (let i = 0; i < ev.length && ev[i].t <= t; i++) k = i;
+  const from = jumped ? -1 : last;
+  if (jumped || k !== last) {
+    let st = null; for (let i = 0; i <= k; i++) if (ev[i].type === 'state') st = ev[i].state;
+    if (st && (jumped || ev.slice(from + 1, k + 1).some((e) => e.type === 'state'))) win.renderState(st, Math.floor(t / 1000));
+    for (let i = Math.max(from + 1, 0); i <= k; i++) {
+      const e = ev[i];
+      if (!jumped && e.type === 'mark' && e.label === 'key-rejection') win.document.getElementById('review')?.click();
+    }
+    const a = [...ev.slice(0, k + 1)].reverse().find((e) => e.type === 'action-start' || e.type === 'action-end');
+    if (a) {
+      const name = ACTIONS[a.action] || a.action;
+      $('act').innerHTML = a.type === 'action-start' ? `⏳ ${name}…`
+        : a.result?.hash ? `<span class="ok">✓</span> ${name} · code ${a.result.code} · height ${Number(a.result.height).toLocaleString('en')} · <a href="${REST + a.result.hash}" target="_blank" rel="noreferrer">${a.result.hash.slice(0, 12)}…</a>`
+        : `${name}`;
+    }
+    last = k;
+  }
+  win.renderTick(Math.floor(t / 1000));
+  $('fill').style.width = (100 * v / total) + '%';
+  $('clock').textContent = new Date(t).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+}
+function frame(now) {
+  if (!playing) return;
+  const dt = lastFrame ? now - lastFrame : 0; lastFrame = now;
+  pos = Math.min(total, pos + dt);
+  apply(pos, false);
+  if (pos >= total) { playing = false; $('play').textContent = '↺ Replay'; return; }
+  requestAnimationFrame(frame);
+}
+function seek(v) { pos = Math.max(0, Math.min(total, v)); last = -1; apply(pos, true); }
+$('play').onclick = () => {
+  if (pos >= total) seek(0);
+  playing = !playing; lastFrame = 0;
+  $('play').textContent = playing ? '❚❚ Pause' : '▶ Play';
+  if (playing) requestAnimationFrame(frame);
+};
+$('bar').onclick = (e) => { const r = $('bar').getBoundingClientRect(); seek(total * (e.clientX - r.left) / r.width); };
+
+Promise.all([fetch('session.json').then((r) => r.json()), new Promise((ok) => $('desk').addEventListener('load', ok, { once: true }))])
+  .then(([s]) => {
+    S = s; ev = s.events; win = $('desk').contentWindow;
+    buildTimeline();
+    for (const m of ev.filter((e) => e.type === 'mark')) {
+      const b = document.createElement('button'); b.textContent = LABELS[m.label] || m.label;
+      b.onclick = () => seek(toVirtual(m.t) + 1); $('scenes').appendChild(b);
+      const tk = document.createElement('div'); tk.className = 'tick'; tk.style.left = (100 * toVirtual(m.t) / total) + '%'; $('bar').appendChild(tk);
+    }
+    seek(0);
+  });
+</script>
+</body>
+</html>
