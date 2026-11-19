@@ -60,7 +60,8 @@ export async function snapshot() {
     deadline: b.submittedTime ? b.submittedTime + windowSecs : null,
     deadlineHeight: b.submittedTime ? null : b.submittedAt + Math.floor(windowSecs / 6) }));
   const { bindings, events } = discoverReaderKeys(entries);
-  const { ledger, executions } = replayExecutions(entries);
+  const { ledger, executions, withdrawals } = replayExecutions(entries);
+  const paymentsBySequence = new Map([...executions, ...withdrawals].map(tx => [tx.sequence, tx]));
   const receipts = new Map();
   const receiptFor = batch => {
     if (!receipts.has(batch.batchIndex)) receipts.set(batch.batchIndex, verifyBatch(batch));
@@ -85,7 +86,7 @@ export async function snapshot() {
     bond: String(bond.amount), batches: batchList,
     entries: entries.map(e => ({ sequence: e.sequence, height: String(e.height), poster: e.poster,
       batch: batchList.find(b => b.start < e.sequence && e.sequence <= b.end)?.index,
-      ...classifyEntry(e, executions.find(x => x.sequence === e.sequence), events.find(x => x.sequence === e.sequence)) })).reverse(),
+      ...classifyEntry(e, paymentsBySequence.get(e.sequence), events.find(x => x.sequence === e.sequence)) })).reverse(),
     payee: { ...payee, account: id.payeeId, fingerprint: bound?.fingerprint, ownKey, sequence: bound?.sequence },
     auditor: { ...auditor, address: auditorAddress, fingerprint: auditorKey } };
   lastBatches = all;

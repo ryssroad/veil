@@ -14,6 +14,22 @@ The default session is read-only. To enable Pay, Top up and Submit batch, start 
 
 Start `npm run desk -- --record demo` to record the dashboard and use **Mark scene** to label moments. The local JSONL in `video/sessions/` contains decrypted demo invoices. Open `/?replay` and inject each recorded state via `window.renderState(event.state, event.t)`, advancing the clock with `window.renderTick(event.t)`. Recording timestamps use epoch milliseconds.
 
+### Operator demo on Diana
+
+To prepare a signing and recording session, stop the existing Desk server, then run this from the repository root with the operator file used by `v1-live.mjs`:
+
+```sh
+VEIL_OPERATOR_MNEMONIC=.private/rollup-operator.mnemonic npm run desk -- --record demo
+```
+
+Starting the server sends no transaction. The **REC** badge and **Mark scene** button appear when recording is active. Signing and recording are independent: omit the environment variable for a read-only recording, or omit `-- --record demo` for signing without recording.
+
+1. In **Payer**, use **Top up** with 2 QOR. Wait for a successful transaction and the refreshed L2 balance.
+2. Pay the bound payee 0.3 QOR using **Travel Rule transfer**. After the payer nonce advances, pay another 0.3 QOR using **Audit services invoice**.
+3. Use **Submit batch** and note the batch number. It becomes available when there are pending entries. Mark the challenge-window scene while the invoices are submitted.
+4. Wait for Diana to finalize the batch. Confirm both invoices show **verified** in both reader columns. Filter the auditor register to that batch and export its CSV.
+5. **Inspect key rejection** jumps to the historical rejected statement at entry 7 and identifies the payee’s binding at entry 6.
+
 ## What ran on Diana
 
 | # | What | Evidence |

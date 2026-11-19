@@ -843,7 +843,7 @@
             el.textContent = remaining(current.batches.find((b) => String(b.index) === el.dataset.clock));
       }
       function info(e) {
-        if (e.kind === 'transfer')
+        if (e.kind === 'transfer' || e.kind === 'withdrawal')
           return (
             pill(e.executed ? 'executed' : 'no-op') +
             ' <b>' +

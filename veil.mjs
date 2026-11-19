@@ -28,6 +28,7 @@ import {
   verifyQledgerTx,
   QledgerLedger,
   QLEDGER_KIND_TRANSFER,
+  QLEDGER_KIND_WITHDRAW,
   QLEDGER_MAX_POST_BYTES,
 } from '@qorechain/rdk';
 
@@ -281,16 +282,23 @@ export function discoverReaderKeys(entries) {
 /**
  * Replays inbox entries one at a time from a parent ledger and records, for each
  * qledger transfer, whether those exact bytes executed (advanced the payer nonce
- * and moved the amount). `entries`: { sequence, height, poster, payload } in order.
+ * and moved the amount). Withdrawal verdicts come from the RDK withdrawal emitted
+ * for that entry and are kept separate from the invoice reader’s transfers.
  */
 export function replayExecutions(entries, ledger = new QledgerLedger()) {
   const out = [];
+  const withdrawals = [];
   for (const e of entries) {
     const tx = decodeQledgerTx(e.payload);
     const from = tx ? qledgerAccountId(tx.publicKey) : undefined;
     const before = from ? ledger.get(from) : undefined;
     const toBefore = tx?.to ? ledger.get(tx.to) : undefined;
-    executeQledger(env, ledger, [e]);
+    const result = executeQledger(env, ledger, [e]);
+    if (tx?.kind === QLEDGER_KIND_WITHDRAW) {
+      withdrawals.push({ kind: 'withdrawal', sequence: e.sequence, payer: hex(from), to: tx.recipient,
+        nonce: tx.nonce, amount: tx.amount, executed: result.withdrawals.length === 1 });
+      continue;
+    }
     if (!tx || tx.kind !== QLEDGER_KIND_TRANSFER) continue;
     const after = ledger.get(from);
     const toAfter = ledger.get(tx.to);
@@ -299,7 +307,7 @@ export function replayExecutions(entries, ledger = new QledgerLedger()) {
     out.push({ sequence: e.sequence, digest: hex(sha256(e.payload)), payer: hex(from), nonce: tx.nonce,
       to: hex(tx.to), amount: tx.amount, executed });
   }
-  return { executions: out, ledger };
+  return { executions: out, withdrawals, ledger };
 }
 
 /** The co-posted envelope of a transfer: the next entry, same height and poster. */

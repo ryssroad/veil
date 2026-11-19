@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { encodeQledgerDeposit, qledgerKeypairFromSeed } from '@qorechain/rdk';
@@ -22,6 +22,22 @@ test('classification retains the replay verdict for transfers and discovery fail
     amount: '1', nonce: '0', executed: false });
   const event = { sequence: 8, result: 'rejected', reason: 'statement: truncated' };
   assert.equal(classifyEntry(entry, undefined, event).reason, event.reason);
+});
+test('the Diana withdrawal at entry 4 executes against its funded ledger and is a no-op on an empty ledger', () => {
+  const transcript = readFileSync(new URL('../evidence/withdrawal/transcript.jsonl', import.meta.url), 'utf8');
+  const entries = transcript.trim().split('\n').flatMap(line => JSON.parse(line).entries)
+    .map((e, i) => ({ ...e, sequence: i + 1, payload: Buffer.from(e.payloadHex, 'hex') }));
+  const withdrawalEntry = entries[3];
+  const { executions, withdrawals } = replayExecutions(entries);
+  assert.equal(withdrawals.length, 1);
+  assert.ok(!executions.some(tx => tx.sequence === withdrawalEntry.sequence));
+  const row = classifyEntry(withdrawalEntry, withdrawals[0]);
+  assert.deepEqual(row, {
+    kind: 'withdrawal', from: '57afc88fe4b99fc0ea2b4862ff8eb75a2bc20aeebec789dcecccf3303ef178d1',
+    to: 'qor1gtcwzywp2czm6kse5gukuc8jx8fc5nma9xkdjy', nonce: '0', amount: '250000', executed: true,
+  });
+  const unfunded = replayExecutions([withdrawalEntry]).withdrawals[0];
+  assert.deepEqual(classifyEntry(withdrawalEntry, unfunded), { ...row, executed: false });
 });
 test('public envelope rows contain only opaque metadata', () => {
   const keys = sealKeysFromSeed(Buffer.alloc(32, 1));

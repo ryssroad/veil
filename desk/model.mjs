@@ -21,7 +21,7 @@ function claimedIdentity(bytes) {
 
 export function classifyEntry(entry, execution, event) {
   const { payload, poster } = entry;
-  if (execution) return { kind: 'transfer', from: execution.payer, to: execution.to,
+  if (execution) return { kind: execution.kind ?? 'transfer', from: execution.payer, to: execution.to,
     amount: String(execution.amount), nonce: String(execution.nonce), executed: execution.executed };
   if (poster.startsWith(QLEDGER_DEPOSIT_POSTER_PREFIX)) {
     const dep = decodeQledgerDeposit(payload);
