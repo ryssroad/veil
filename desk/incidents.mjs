@@ -1,6 +1,6 @@
 // Divergent batches through their challenge window (#12): the reader's own
 // challenge, delivered with retries, and the chain's verdict whoever won.
-import { incidentsFrom } from '../finality.mjs';
+import { incidentsFrom, PENDING } from '../finality.mjs';
 
 const BACKOFF_MS = [5_000, 10_000, 20_000, 40_000, 60_000];
 /** How long a broadcast hash may stay unknown to the node before it is sent again. */
@@ -51,14 +51,17 @@ export function createIncidentTracker({ send, lookupTx, fetchOutcomes, now = Dat
   /**
    * `watch` is the current result of `watchBatches`; `changed` says the batch
    * list moved since the last call. Call it on every read, changed or not:
-   * retries and third-party outcomes do not depend on a new view.
+   * retries and third-party outcomes do not depend on a new view. `height` is
+   * a chain height read before the view, when known: the view is at least that
+   * recent, so a submission it shows pending was not rejected at or below it.
    */
-  async function update({ watch, windowSecs, changed = true }) {
+  async function update({ watch, windowSecs, changed = true, height }) {
     const t = now();
     const current = new Map(incidentsFrom(watch).map(i => [i.key, i]));
     for (const [key, i] of current) {
       const known = incidents.get(key);
-      incidents.set(key, { ...known, ...i, firstSeen: known?.firstSeen ?? t,
+      const pendingAt = PENDING.has(i.status) && height !== undefined ? Math.max(known?.pendingAt ?? 0, height) : known?.pendingAt;
+      incidents.set(key, { ...known, ...i, firstSeen: known?.firstSeen ?? t, pendingAt,
         deadline: i.submittedTime ? i.submittedTime + windowSecs : null });
     }
     for (const [key, i] of incidents) {
@@ -81,13 +84,20 @@ export function createIncidentTracker({ send, lookupTx, fetchOutcomes, now = Dat
         refreshedAt = t;
       } catch { /* keep what we know; the next read asks again */ }
     }
-    // A verdict belongs to the submission it rejected: the latest one at that index submitted at or before it.
+    // A verdict belongs to the one submission it rejected. Heights alone cannot
+    // order a verdict and a resubmission inside one block, so the rule uses what
+    // the views showed: the owner is a submission that has left the view, was
+    // submitted at or before the verdict, and was not seen pending at or after
+    // the verdict's height. Verdicts are taken in height order and each goes to
+    // the earliest such submission without one; a submission still pending owns none.
     const owner = new Map();
     const past = [];
-    for (const o of outcomes.values()) {
-      const own = [...incidents.values()].filter(i => i.index === o.index && i.submittedAt <= o.height)
-        .sort((a, b) => b.submittedAt - a.submittedAt)[0];
-      if (own && !owner.has(own.key)) owner.set(own.key, o);
+    for (const o of [...outcomes.values()].sort((a, b) => a.height - b.height)) {
+      const own = [...incidents.values()]
+        .filter(i => i.closedAt && i.verdict === 'diverged' && i.index === o.index && !owner.has(i.key)
+          && i.submittedAt <= o.height && !(i.pendingAt >= o.height))
+        .sort((a, b) => a.submittedAt - b.submittedAt)[0];
+      if (own) owner.set(own.key, o);
       else past.push({ index: o.index, status: 'rejected', verdict: 'diverged', upheld: o });
     }
     const list = [...incidents.values()].map(({ proofHex, ...i }) => ({ ...i, upheld: owner.get(i.key) ?? null }));

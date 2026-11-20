@@ -86,8 +86,10 @@ export async function deskFixture(t, { watcher = false } = {}) {
   const desk = await import('./state.mjs');
   const searches = [];
   let fraudTxs = () => [];
+  let tip = 40;
   Object.assign(client.rest, {
     getRollup: async () => ({ creator: OPERATOR, challengeWindowSec: 3600 }),
+    getLatestHeight: async () => (tip += 2),
     getInbox: async () => ({ headSequence: 4, headAcc: hex(acc(4)), consumedSequence: chain.consumed }),
     getLatestBatch: async () => chain.batches.at(-1),
     getBatch: async (_, i) => { if (!chain.batches[i]) throw new RestError('not found', 404); return chain.batches[i]; },

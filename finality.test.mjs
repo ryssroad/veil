@@ -302,6 +302,20 @@ test('Diana batch 2: the watcher flags the forgery with the proof the chain uphe
   assert.equal(w.root, forgery.honest.stateRoot);
 });
 
+test('cascading rejection: pending descendants of a rejected batch are rolled back with it', () => {
+  const { entries, b0, b1, forged, honest } = diana();
+  // Batch 3 was built on the forged batch 2; the chain rejects both and rolls the inbox back to 4.
+  const descendant = { batchIndex: 3, status: 'rejected', inboxStart: 5, inboxEnd: 5, prevStateRoot: forged.stateRoot,
+    stateRoot: 'aa'.repeat(32), withdrawalsRoot: '', dataHash: '00'.repeat(32), submittedAt: 10320165 };
+  let w = watchBatches({ entries, batches: [b0, b1, { ...forged, status: 'rejected' }, descendant] });
+  assert.deepEqual(w.verdicts.map((v) => v.verdict), ['ok', 'ok', 'rolled-back', 'rolled-back']);
+  assert.equal(w.consumed, 4);
+  assert.equal(dispute(w, 5), undefined);
+  // The honest replacement of batch 2 next to the still-rejected batch 3.
+  w = watchBatches({ entries, batches: [b0, b1, honest, descendant] });
+  assert.deepEqual(w.verdicts.map((v) => v.verdict), ['ok', 'ok', 'ok', 'rolled-back']);
+});
+
 test('Diana batch 2, counterfactual: had the forgery finalized unchallenged, nothing after it is determined', () => {
   const { entries, b0, b1, forged } = diana();
   const w = watchBatches({ entries, batches: [b0, b1, { ...forged, status: 'finalized' }] });
