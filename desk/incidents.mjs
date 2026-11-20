@@ -81,12 +81,18 @@ export function createIncidentTracker({ send, lookupTx, fetchOutcomes, now = Dat
         refreshedAt = t;
       } catch { /* keep what we know; the next read asks again */ }
     }
-    const all = [...outcomes.values()];
-    const list = [...incidents.values()].map(({ proofHex, ...i }) => ({ ...i,
-      upheld: all.find(o => o.index === i.index && o.height >= (i.submittedAt ?? 0)) ?? null }));
-    const past = all.filter(o => !list.some(i => i.upheld?.hash === o.hash))
-      .map(o => ({ index: o.index, status: 'rejected', verdict: 'diverged', upheld: o }));
-    return [...list, ...past].sort((a, b) => b.index - a.index || (b.upheld?.height ?? 0) - (a.upheld?.height ?? 0));
+    // A verdict belongs to the submission it rejected: the latest one at that index submitted at or before it.
+    const owner = new Map();
+    const past = [];
+    for (const o of outcomes.values()) {
+      const own = [...incidents.values()].filter(i => i.index === o.index && i.submittedAt <= o.height)
+        .sort((a, b) => b.submittedAt - a.submittedAt)[0];
+      if (own && !owner.has(own.key)) owner.set(own.key, o);
+      else past.push({ index: o.index, status: 'rejected', verdict: 'diverged', upheld: o });
+    }
+    const list = [...incidents.values()].map(({ proofHex, ...i }) => ({ ...i, upheld: owner.get(i.key) ?? null }));
+    return [...list, ...past].sort((a, b) => b.index - a.index
+      || (b.submittedAt ?? b.upheld?.height ?? 0) - (a.submittedAt ?? a.upheld?.height ?? 0));
   }
   return { update };
 }

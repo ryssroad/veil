@@ -15,7 +15,7 @@ const auditorDir = process.env.VEIL_AUDITOR_DIR || '.private/clients/auditor';
 const watcherFile = process.env.VEIL_WATCHER_MNEMONIC;
 export const watching = Boolean(watcherFile);
 const times = new Map();
-let lastKey, lastState, lastBatches, lastWatch, keys, watcher, creator;
+let lastKey, lastState, lastBatches, last, keys, watcher, creator;
 
 // Wall-clock observations for the finality measurement (#12).
 const clicks = new Map();      // tx hash -> { clickAt, sentAt, height }
@@ -84,15 +84,17 @@ function decorate(state) {
   return state;
 }
 
-export async function snapshot() {
-  const id = identities();
-  const [roll, inbox, latest, registered] = await Promise.all([
-    client.rest.getRollup(rollupId), client.rest.getInbox(rollupId),
-    client.rest.getLatestBatch(rollupId), registryKey(auditorAddress),
+/**
+ * The watcher's part of a read: the chain view, the batch replay and incident
+ * handling. Nothing a reader displays (keys, registry, bond, block times,
+ * receipts) comes before it, so an outage of display data cannot hold back a
+ * challenge.
+ */
+async function watchChain() {
+  const [roll, inbox, latest] = await Promise.all([
+    client.rest.getRollup(rollupId), client.rest.getInbox(rollupId), client.rest.getLatestBatch(rollupId),
   ]);
   creator = roll.creator;
-  const bond = await client.rest.getSubmitterBond(rollupId, roll.creator);
-  const auditorKey = registered && kemFingerprint(registered.key);
   let all;
   if (lastBatches?.at(-1)?.batchIndex === latest.batchIndex) {
     all = await Promise.all(lastBatches.map(b => {
@@ -105,17 +107,33 @@ export async function snapshot() {
   // Reads can straddle a new block. Retry on the next poll instead of mixing ranges.
   const lastLive = all.filter(b => b.status !== 'rejected').at(-1);
   if (Number(lastLive?.inboxEnd ?? 0) !== Number(inbox.consumedSequence)) throw new Error('Inbox moved during refresh');
-  const key = JSON.stringify([inbox, all, bond, auditorKey, roll.challengeWindowSec]);
+  const key = JSON.stringify([inbox, all, roll.challengeWindowSec]);
+  const changed = key !== last?.key;
+  let view = last;
+  if (changed) {
+    const { entries } = await inboxEntries(inbox);
+    const windowSecs = roll.challengeWindowSec ?? (await client.rest.getParams()).defaultChallengeWindow;
+    view = { key, roll, inbox, all, entries, windowSecs, watch: watchBatches({ entries, batches: all }) };
+  }
+  const incidents = await tracker.update({ watch: view.watch, windowSecs: view.windowSecs, changed });
+  // The replay held: this view is the base for the next read, whatever fails after it.
+  last = view;
+  lastBatches = all;
+  return { ...view, incidents, checkedAt: Date.now() };
+}
+
+export async function snapshot() {
+  const { key: chainKey, roll, inbox, all, entries, windowSecs, watch, incidents, checkedAt } = await watchChain();
+  const id = identities();
+  const [registered, bond] = await Promise.all([registryKey(auditorAddress), client.rest.getSubmitterBond(rollupId, roll.creator)]);
+  const auditorKey = registered && kemFingerprint(registered.key);
+  const key = JSON.stringify([chainKey, bond, auditorKey]);
   if (lastKey === key) {
-    // Nothing moved: the last check still holds, and the watcher is current.
-    // Challenge retries and third-party verdicts still advance.
-    lastState.watch.checkedAt = Date.now();
-    lastState.incidents = await tracker.update({ watch: lastWatch, windowSecs: lastState.windowSecs, changed: false });
+    // Nothing moved: the last rows still hold, and the watcher is current.
+    lastState.watch.checkedAt = checkedAt;
+    lastState.incidents = incidents;
     return decorate(lastState);
   }
-  const { entries } = await inboxEntries(inbox);
-  const windowSecs = roll.challengeWindowSec ?? (await client.rest.getParams()).defaultChallengeWindow;
-  const watch = watchBatches({ entries, batches: all });
   const verdictOf = index => watch.verdicts.find(v => v.index === index);
   const batchList = all.map(b => ({ index: b.batchIndex, status: b.status, start: b.inboxStart, end: b.inboxEnd,
     height: b.status === 'finalized' ? b.finalizedAt : b.submittedAt, submittedAt: b.submittedAt,
@@ -147,16 +165,14 @@ export async function snapshot() {
   const state = { rollup: rollupId, payer: { account: hex(id.payerId), balance: String(balance.balance), nonce: String(balance.nonce) },
     signing: Boolean(process.env.VEIL_OPERATOR_MNEMONIC), inbox: { head: inbox.headSequence, consumed: inbox.consumedSequence },
     bond: String(bond.amount), batches: batchList, windowSecs,
-    watch: { checkedAt: Date.now(), pending: pending.length, diverged: pending.filter(v => v.verdict !== 'ok').map(v => v.index),
+    watch: { checkedAt, pending: pending.length, diverged: pending.filter(v => v.verdict !== 'ok').map(v => v.index),
       fault: watch.fault?.index ?? null, challenging: Boolean(watcherFile) },
-    incidents: await tracker.update({ watch, windowSecs, changed: true }),
+    incidents,
     entries: entries.map(e => ({ sequence: e.sequence, height: String(e.height), poster: e.poster, tx: e.tx.hash,
       batch: batchList.find(b => b.status !== 'rejected' && b.start < e.sequence && e.sequence <= b.end)?.index,
       ...classifyEntry(e, paymentsBySequence.get(e.sequence), events.find(x => x.sequence === e.sequence)) })).reverse(),
     payee: { ...payee, account: id.payeeId, fingerprint: bound?.fingerprint, ownKey, sequence: bound?.sequence },
     auditor: { ...auditor, address: auditorAddress, fingerprint: auditorKey } };
-  lastBatches = all;
-  lastWatch = watch;
   lastState = state;
   lastKey = key;
   return decorate(state);

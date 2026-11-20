@@ -163,10 +163,14 @@ export function dispute(watch, sequence) {
   return bad ? { batch: bad.index, reason: `batch ${bad.index} (${bad.status}) diverges from the replay` } : undefined;
 }
 
-/** Open and closed divergences, keyed by batch index and the root it claimed. */
+/**
+ * Divergent submissions. The key names one submission (index, claimed root and
+ * submission height): after a rejection the same index, even the same root, can
+ * be submitted again, and that is a new incident.
+ */
 export function incidentsFrom(watch) {
   return watch.verdicts.filter((v) => v.verdict === 'diverged' || v.verdict === 'diverged-parent')
-    .map((v) => ({ key: `${v.index}:${v.stateRoot}`, index: v.index, stateRoot: v.stateRoot, status: v.status,
+    .map((v) => ({ key: `${v.index}:${v.stateRoot}:${v.submittedAt}`, index: v.index, stateRoot: v.stateRoot, status: v.status,
       verdict: v.verdict, submittedAt: v.submittedAt, submittedTime: v.submittedTime, proofSha256: v.proofSha256,
       proofHex: v.proofHex, expected: v.expected }));
 }

@@ -2,7 +2,9 @@
 // delivery with retries, terminal chain outcomes, third-party verdicts.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { TimeoutError, BroadcastTxError } from '@cosmjs/stargate';
 import { createIncidentTracker } from './incidents.mjs';
+import { challenge, broadcastFailure } from './chain.mjs';
 
 const WINDOW = 3600;
 const forged = (over = {}) => ({ index: 2, status: 'submitted', start: 4, end: 5, stateRoot: 'ab'.repeat(32), verdict: 'diverged',
@@ -125,4 +127,70 @@ test('a third-party challenge Desk never saw is still reported, from an event cu
   list = await quiet.step(10_000, view());
   assert.deepEqual(quiet.calls.outcomes, [0, 0, 102]);
   assert.deepEqual(list.map((i) => i.index), [7, 2], 'no duplicate for the event at the cursor height');
+});
+
+// ------------------------------------------------- second review of PR 13
+
+test('a CosmJS timeout keeps the submitted hash: it is looked up, and nothing is broadcast twice', async () => {
+  const H = 'AB'.repeat(32);
+  let broadcasts = 0;
+  const transport = async (account, messages, name) => {
+    broadcasts += 1;
+    assert.equal(account.cosmos, 'qor1watcher');
+    assert.deepEqual([messages.length, name], [1, 'challenge']);
+    throw new TimeoutError(`Transaction with ID ${H} was submitted but was not yet found on the chain.`, H);
+  };
+  const lookups = [];
+  const h = harness({
+    // The real adapter, with only the transport replaced.
+    send: (n, index, proofHex) => challenge({ cosmos: 'qor1watcher' }, index, proofHex, { send: transport }),
+    lookupTx: (n, hash) => { lookups.push(hash); return { code: 0, height: 103 }; },
+  });
+  let [i] = await h.step(0, view(forged()), true);
+  assert.deepEqual([i.ours.state, i.ours.hash, i.ours.code], ['sent', H, null]);
+  [i] = await h.step(6000, view(forged()));
+  assert.deepEqual([i.ours.state, i.ours.code, i.ours.height], ['included', 0, 103]);
+  assert.deepEqual(lookups, [H]);
+  await h.step(60_000, view(forged()));
+  assert.equal(broadcasts, 1);
+});
+
+test('broadcast failures are read from the error fields, never from its text', () => {
+  const H = 'cd'.repeat(32);
+  // SDK QoreTxError: included and failed, e.g. another watcher already won.
+  const delivered = Object.assign(new Error('batch 2 is rejected'), { name: 'QoreTxError', code: 9, codespace: 'rdk', txHash: H });
+  assert.deepEqual([broadcastFailure(delivered).hash, broadcastFailure(delivered).code], [H.toUpperCase(), 9]);
+  // CheckTx refusal: nothing entered the mempool, so there is no hash to wait for.
+  const refused = broadcastFailure(new BroadcastTxError(32, 'sdk', 'account sequence mismatch'));
+  assert.deepEqual([refused.hash, refused.code], [null, null]);
+  // A socket error carries a string code and a message that merely mentions a hash.
+  const socket = broadcastFailure(Object.assign(new Error(`reset after code 0 (tx ${H})`), { code: 'ECONNRESET' }));
+  assert.deepEqual([socket.hash, socket.code], [null, null]);
+  const timeout = broadcastFailure(new TimeoutError('not yet found', H));
+  assert.deepEqual([timeout.hash, timeout.code], [H.toUpperCase(), null]);
+});
+
+test('each submission is its own incident: a resubmission at the same index and root gets a fresh challenge', async () => {
+  let events = [];
+  const h = harness({ send: (n) => ({ hash: (n === 1 ? 'A' : 'B').repeat(64), code: 0, height: n === 1 ? 102 : 302 }), outcomes: () => events });
+  await h.step(0, view(forged()), true);
+  events = [upheld];
+  await h.step(3000, view(forged({ status: 'rejected', verdict: 'rolled-back' })), true);
+  assert.equal(h.calls.send, 1);
+  // The same claim again, submitted later.
+  const again = forged({ submittedAt: 300, submittedTime: 1600 });
+  let list = await h.step(600_000, view(again), true);
+  assert.equal(h.calls.send, 2, 'the replacement is challenged');
+  assert.equal(list.length, 2);
+  const [second, first] = list;
+  assert.deepEqual([first.submittedAt, first.status, first.ours.hash, first.ours.state, first.upheld.hash],
+    [100, 'rejected', 'A'.repeat(64), 'included', upheld.hash]);
+  assert.ok(first.closedAt);
+  assert.deepEqual([second.submittedAt, second.status, second.closedAt, second.ours.hash, second.ours.attempts, second.upheld],
+    [300, 'submitted', undefined, 'B'.repeat(64), 1, null]);
+  // Its own verdict, when it comes, goes to the second submission only.
+  events = [upheld, { ...upheld, hash: 'F'.repeat(64), height: 302 }];
+  list = await h.step(3000, view(forged({ ...again, status: 'rejected', verdict: 'rolled-back' })), true);
+  assert.deepEqual(list.map((i) => [i.submittedAt, i.upheld.hash]), [[300, 'F'.repeat(64)], [100, upheld.hash]]);
+  assert.equal(list.length, 2);
 });

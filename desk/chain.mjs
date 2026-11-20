@@ -9,7 +9,7 @@ import {
   anchorSignBytesForBatch, buildSettlementReceipt, verifySettlementReceipt, isRestNotFound, challengeBatchMsg,
 } from '@qorechain/rdk';
 import { deriveUnifiedAccount, EthNativeSigner, pqcSign } from '@qorechain/sdk';
-import { StargateClient } from '@cosmjs/stargate';
+import { StargateClient, TimeoutError } from '@cosmjs/stargate';
 import {
   env, chainId, rollupId, hex, sha256, kemFingerprint, kemKeyFromRegistry, createInvoicePayment,
   openInvoice, discoverReaderKeys, replayExecutions, coPostedEnvelope, coPostedInTx, InvoiceImporter,
@@ -276,20 +276,31 @@ export async function txResult(hash) {
 }
 
 /**
- * Submit a fraud challenge from the reader's watcher account. Returns the hash
- * and code when the node reported them; `code: null` means the outcome is
- * unknown (a transport failure, or a broadcast that did not confirm).
+ * What a failed broadcast says about the transaction, from the error's own
+ * fields: the SDK's QoreTxError (`txHash`, delivery `code`), this module's
+ * `tx`, and CosmJS's TimeoutError, whose `txId` is a transaction that was
+ * submitted and whose result is not known yet. A hash is never dropped: the
+ * caller looks it up before sending again.
  */
-export async function challenge(watcher, batchIndex, proofHex) {
+export function broadcastFailure(err) {
+  const timedOut = err instanceof TimeoutError || err?.name === 'TimeoutError';
+  const hash = err?.tx?.hash ?? err?.txHash ?? err?.transactionHash ?? err?.txId ?? null;
+  const raw = err?.tx?.code ?? err?.code;
+  return { hash: hash ? String(hash).toUpperCase() : null, height: err?.tx?.height,
+    code: hash && !timedOut && Number.isInteger(raw) ? raw : null, error: String(err?.message ?? err).slice(0, 300) };
+}
+
+/**
+ * Submit a fraud challenge from the reader's watcher account. Resolves to the
+ * hash and code when known; `code: null` means the outcome is unknown, and
+ * `hash: null` that nothing is known to have been submitted.
+ */
+export async function challenge(watcher, batchIndex, proofHex, { send = broadcast } = {}) {
   try {
-    const tx = await broadcast(watcher, [challengeBatchMsg({ challenger: watcher.cosmos, rollupId, batchIndex,
+    const tx = await send(watcher, [challengeBatchMsg({ challenger: watcher.cosmos, rollupId, batchIndex,
       proof: Buffer.from(proofHex, 'hex') })], 'challenge');
     return { hash: tx.hash, code: tx.code, height: tx.height };
   } catch (err) {
-    if (err.tx) return { hash: err.tx.hash, code: err.tx.code, height: err.tx.height };
-    const message = String(err?.message ?? err);
-    const code = message.match(/code (\d+)/)?.[1];
-    return { hash: message.match(/\(tx ([0-9A-F]{64})\)/)?.[1] ?? null, code: code === undefined ? null : Number(code),
-      error: message.slice(0, 300) };
+    return broadcastFailure(err);
   }
 }
