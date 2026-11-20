@@ -92,20 +92,34 @@ export function createIncidentTracker({ send, lookupTx, fetchOutcomes, now = Dat
         refreshedAt = t;
       } catch { /* keep what we know; the next read asks again */ }
     }
-    // A verdict is linked to a submission only when the observations leave one
-    // owner: the submission was seen pending and then seen rejected, the verdict
-    // falls after the last height it was known to survive and no later than the
-    // height by which it was known rejected, no other submission at the index
-    // fits, and no other verdict fits the same submission. Anything else stays
-    // listed on its own, with its hash, height and batch index.
-    const fits = (i, o) => i.verdict === 'diverged' && i.index === o.index
-      && i.survived !== undefined && i.rejectedBy !== undefined && o.height > i.survived && o.height <= i.rejectedBy;
+    // Which verdict rejected a submission. While it is pending, two things can
+    // reject it: a verdict at its own index, or a verdict against a pending
+    // ancestor (a lower index), which the chain cascades to every batch built on
+    // it. So the first such event after the last height it was known to survive
+    // is what rejected it, and later events at its index concern a later
+    // submission, seen or not. The verdict is linked only if that first event
+    // is at the submission's own index, is alone at its height, is no later
+    // than the height by which the submission was known rejected, and is
+    // claimed by no other submission. Every other verdict stays listed on its
+    // own, with its hash, height and batch index.
     const events = [...outcomes.values()];
+    const rejecter = (i) => {
+      if (i.verdict !== 'diverged' || i.survived === undefined || i.rejectedBy === undefined) return null;
+      const after = events.filter(e => e.index <= i.index && e.height > i.survived);
+      const height = Math.min(...after.map(e => e.height));
+      const first = after.filter(e => e.height === height);
+      return first.length === 1 && first[0].index === i.index && height <= i.rejectedBy ? first[0] : null;
+    };
+    const claims = new Map();
+    for (const i of incidents.values()) {
+      const e = rejecter(i);
+      if (e) claims.set(e, [...(claims.get(e) ?? []), i.key]);
+    }
     const owner = new Map();
     const past = [];
     for (const o of events) {
-      const candidates = [...incidents.values()].filter(i => fits(i, o));
-      if (candidates.length === 1 && events.filter(e => fits(candidates[0], e)).length === 1) owner.set(candidates[0].key, o);
+      const by = claims.get(o);
+      if (by?.length === 1) owner.set(by[0], o);
       else past.push({ index: o.index, status: 'rejected', verdict: 'diverged', upheld: o });
     }
     const list = [...incidents.values()].map(({ proofHex, ...i }) => ({ ...i, upheld: owner.get(i.key) ?? null }));

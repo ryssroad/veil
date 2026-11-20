@@ -199,10 +199,11 @@ test('each submission is its own incident: a resubmission at the same index and 
   assert.equal(list.length, 2);
 });
 
-// ------------------------------------- third and fourth reviews of PR 13
+// -------------------------------------- third to fifth reviews of PR 13
 //
-// A verdict is linked to a submission only when the observations leave one
-// owner. Each standalone entry keeps the event's hash, height and batch index.
+// A verdict is linked to a submission only when the observations and the
+// chain's events identify what rejected it. Each standalone entry keeps the
+// event's hash, height and batch index.
 
 const HA = 'A1'.repeat(32), HB = 'B1'.repeat(32), HC = 'C1'.repeat(32);
 const event = (hash, height, index = 2) => ({ index, hash, height, challenger: 'qor1thirdparty' });
@@ -263,15 +264,43 @@ test('a later verdict is not given to a submission already seen rejected', async
   assert.deepEqual([alone.index, alone.upheld.height], [3, 112]);
 });
 
-test('no unique owner, no link: two verdicts fit one submission, or one verdict fits two', async () => {
-  // Sparse polls: pending at 100, gone by 120, and two verdicts at the index in between.
-  let events = [event(HA, 105), event(HB, 112)];
-  let h = harness({ outcomes: () => events });
+test('a missed replacement: its verdict is not shown on the earlier submission that fell with its parent', async () => {
+  const HP = 'D1'.repeat(32);
+  let events = [];
+  const h = harness({ outcomes: () => events });
+  // Height 100: Desk observes divergent submission A at index 3.
+  const a = { index: 3, submittedAt: 100 };
+  await h.step(0, view(forged(a)), true, 100);
+  // 105: a challenge to its parent at index 2 is upheld, and A is rolled back with it.
+  // Between polls B is submitted at index 3 and a challenge against B is upheld at 112.
+  events = [event(HP, 105, 2), event(HB, 112, 3)];
+  const list = await h.step(8000, view(), true, 120);
+  assert.deepEqual(shape(list), [[null, 'rejected', HB], [100, 'rejected', null], [null, 'rejected', HP]]);
+  once(list, HB, HP);
+  const [b, , parent] = list;
+  assert.deepEqual([b.index, b.upheld.height, parent.index, parent.upheld.height], [3, 112, 2, 105]);
+});
+
+test('the first event that could reject a submission decides: later verdicts at its index are another submission\u2019s', async () => {
+  // Sparse polls: pending at 100, gone by 120, verdicts at the index at 105 and 112.
+  // It was pending until the first of them, so that one is its own; the second rejected a replacement Desk missed.
+  const h = harness({ outcomes: () => [event(HA, 105), event(HB, 112)] });
   await h.step(0, view(forged({ submittedAt: 100 })), true, 100);
-  let list = await h.step(8000, view(), true, 120);
-  assert.deepEqual(shape(list).map(([at, , hash]) => [at, hash]).sort(), [[100, null], [null, HA], [null, HB]].sort());
+  const list = await h.step(8000, view(), true, 120);
+  assert.deepEqual(shape(list), [[null, 'rejected', HB], [100, 'rejected', HA]]);
   once(list, HA, HB);
-  // Two submissions whose windows overlap: the height before the second view was not read.
+});
+
+test('no unique owner, no link: a tie inside one block, or one verdict claimed by two submissions', async () => {
+  // A verdict at the index and one against the parent in the same block: their order is unknown.
+  const HP = 'D1'.repeat(32);
+  let events = [event(HP, 105, 2), event(HC, 105, 3)];
+  let h = harness({ outcomes: () => events });
+  await h.step(0, view(forged({ index: 3, submittedAt: 100 })), true, 100);
+  let list = await h.step(8000, view(), true, 120);
+  assert.deepEqual(list.find((i) => i.submittedAt === 100).upheld, null);
+  once(list, HC, HP);
+  // Two submissions whose bounds overlap: the height before the second view was not read.
   events = [event(HA, 105)];
   h = harness({ outcomes: () => events });
   const b = { submittedAt: 103, submittedTime: 1010 };
