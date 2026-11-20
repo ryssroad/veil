@@ -55,7 +55,8 @@ export function invoicesCsv(rows, batch) {
     const literal = /^\s*[=+@-]|^[\t\r\n]/.test(text) ? "'" + text : text;
     return '"' + literal.replaceAll('"', '""') + '"';
   };
-  const data = rows.filter(r => r.status === 'verified' && (batch == null || String(r.batch) === String(batch)));
+  // Accounting export: settled invoices only (finalized batch, verified receipt).
+  const data = rows.filter(r => r.status === 'settled' && (batch == null || String(r.batch) === String(batch)));
   return [['time', 'payer', 'payee', 'amount_uqor', 'description', 'batch', 'status', 'invoice_id'],
     ...data.map(r => [r.time, r.payer, r.invoice.beneficiary, r.invoice.amountUqor, r.invoice.description,
       r.batch, r.status, r.invoice.id])].map(row => row.map(escape).join(',')).join('\r\n') + '\r\n';

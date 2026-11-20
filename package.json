@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "scripts": {
     "audit": "node audit.mjs",
-    "test": "node --test invoice.test.mjs veil.test.mjs desk/model.test.mjs",
+    "test": "node --test invoice.test.mjs veil.test.mjs finality.test.mjs desk/model.test.mjs desk/state.test.mjs",
     "desk": "node desk/server.mjs"
   },
   "dependencies": {

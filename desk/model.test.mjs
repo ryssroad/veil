@@ -50,10 +50,10 @@ test('unknown bytes have a bounded printable preview', () => {
   assert.equal(row.preview.length, 72);
   assert.ok(row.preview.startsWith('probe·'));
 });
-test('CSV includes only verified invoices, supports batch zero and quotes text', () => {
-  const row = { time: '2026-11-18', payer: 'payer', batch: 0, status: 'verified',
+test('CSV includes only settled invoices, supports batch zero and quotes text', () => {
+  const row = { time: '2026-11-18', payer: 'payer', batch: 0, status: 'settled',
     invoice: { beneficiary: 'payee', amountUqor: '300000', description: '=SUM(3,4) "test"', id: 'id' } };
-  const rows = [row, { ...row, batch: 1 }, ...['conflict','pending','submitted','unverified'].map(status => ({ ...row, status }))];
+  const rows = [row, { ...row, batch: 1 }, ...['conflict','determined','disputed','unwatched','no-op','verified','unverified'].map(status => ({ ...row, status }))];
   assert.equal(invoicesCsv(rows, '0').trimEnd().split('\r\n').length, 2);
   assert.equal(invoicesCsv(rows).trimEnd().split('\r\n').length, 3);
   assert.ok(invoicesCsv(rows, '0').includes(`"'=SUM(3,4) ""test"""`));
@@ -77,14 +77,15 @@ test('reader keeps the invoice visible through finality and imports only a valid
     auditorKem: auditor.mlkemPublicKey, id: 'f'.repeat(32), description: 'Services' });
   const entries = [
     { sequence: 1, height: 1, poster: 'deposit:demo', payload: encodeQledgerDeposit(payer.accountId, 10n) },
-    { sequence: 2, height: 2, poster: 'demo', payload: transfer },
-    { sequence: 3, height: 2, poster: 'demo', payload: envelope },
+    { sequence: 2, height: 2, poster: 'demo', payload: transfer, tx: { hash: 'A'.repeat(64), code: 0, msgIndex: 0 } },
+    { sequence: 3, height: 2, poster: 'demo', payload: envelope, tx: { hash: 'A'.repeat(64), code: 0, msgIndex: 1 } },
   ];
-  const params = { dir, entries, executions: replayExecutions(entries).executions,
+  // The watcher's verdicts are tested in finality.test.mjs; here every batch checks out.
+  const params = { dir, entries, executions: replayExecutions(entries).executions, watch: { verdicts: [], fault: null },
     mine: account, sealKeys: receiver, auditorKey: kemFingerprint(auditor.mlkemPublicKey) };
   const batch = { batchIndex: 0, inboxStart: 0, inboxEnd: 3, status: 'submitted' };
   const withoutReceipt = () => assert.fail('premature receipt lookup');
-  for (const [all, status] of [[[], 'pending'], [[batch], 'submitted']]) {
+  for (const [all, status] of [[[], 'determined'], [[batch], 'determined']]) {
     const report = await readInvoices({ ...params, all, receiptFor: withoutReceipt });
     assert.equal(report.rows[0].status, status);
     assert.equal(report.rows[0].invoice.description, 'Services');
@@ -93,6 +94,8 @@ test('reader keeps the invoice visible through finality and imports only a valid
   batch.status = 'finalized';
   const scan = valid => readInvoices({ ...params, all: [batch], receiptFor: () => ({ valid, checks: {}, reason: 'test' }) });
   assert.equal((await scan(false)).rows[0].status, 'unverified');
-  assert.equal((await scan(true)).rows[0].import, 'imported');
+  const settled = (await scan(true)).rows[0];
+  assert.equal(settled.status, 'settled');
+  assert.equal(settled.import, 'imported');
   assert.equal((await scan(true)).rows[0].import, 'duplicate');
 });

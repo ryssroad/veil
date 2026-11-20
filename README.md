@@ -38,7 +38,7 @@ Rollups that hide everything usually prove that a batch is arithmetically consis
 | What a dishonest operator can do | Nothing that survives a challenge: forged batches are rejected and the operator is slashed |
 | Who can read payment details | The payee and an auditor named in the invoice. The operator and watchtowers cannot |
 | What stays public | Accounts, amounts and timing, so anyone can audit the ledger itself |
-| Cost of the trade | Amounts are public; finality takes the 1-hour challenge window |
+| Cost of the trade | Amounts are public; L1 settlement takes the 1-hour challenge window. A watching reader can verify the payment after its first committed block ([Fast finality](#fast-finality)) |
 
 Veil is for payments that must stay publicly verifiable while their purpose stays private.
 
@@ -50,7 +50,7 @@ Veil is for payments that must stay publicly verifiable while their purpose stay
 
 The body is canonical JSON with exactly these keys: `version` (2), `id`, `description` (≤128 B printable text), `amountUqor`, `beneficiary` and `auditorKey`, which is the sha256 of the auditor's registered ML-KEM-1024 key. The worst case fits the 6,144 B post limit (6,135 B), and the size is checked before sealing.
 
-**A reader accepts an invoice when all of these hold:**
+**A reader settles an invoice when all of these hold:**
 1. its key opens the envelope for this exact transfer, and the envelope has exactly two slots;
 2. the payer's signature verifies and the body is canonical;
 3. the amount and beneficiary equal the transfer's, and `auditorKey` equals the auditor's key in the chain registry;
@@ -61,6 +61,24 @@ The body is canonical JSON with exactly these keys: `version` (2), `id`, `descri
 **Reader keys.** The payee publishes a binary `VRK1` statement (5,369 B) to the inbox. It binds its L2 account to an ML-KEM-1024 key and is signed by the account's ML-DSA-44 key under its own context. The first valid statement per account wins, so replays and later statements change nothing. The auditor is an organization with a `qor1` address and uses the chain's KEM registry.
 
 **What stays public.** The fact of payment, both L2 accounts, the amount, the time, the L1 poster and the message sizes — qledger is a public ledger. What the payment was for is visible only to the payee and the auditor.
+
+## Fast finality
+
+The recipient can verify a payment after its first committed Diana block. L1 settlement follows batch finalization.
+
+This holds because qledger-v1 execution is a deterministic function of the ordered inbox. The inbox is based-sequenced, so the operator can neither reorder nor skip posts. Diana commits each block once (1.427 s per block on average over 1,000 blocks on 20 Nov). So the outcome of a payment is fixed in the block that posts it. A batch attests to that outcome, and the challenge window decides when L1 pays withdrawals. When the forged batch 2 was rejected on Diana, its honest replacement produced the same balances.
+
+The reader reports three states for each invoice:
+
+| State | When |
+|---|---|
+| **determined** | Rules 1–4 and 6 hold. The transfer and its envelope are consecutive messages of **one** successful L1 transaction (same hash, code 0). The reader's watcher has checked every batch: it replays the inbox from genesis, matches each finalized batch as a checkpoint, and finds that every pending batch whose range starts before the entry follows the replay |
+| **settled** | Also rule 5: the batch is finalized and its ML-DSA-87 receipt verifies. Only settled invoices are imported and exported to CSV |
+| **disputed** | A pending batch the entry depends on diverges from the replay, including an earlier batch that ends before the entry, or a finalized batch diverges. The watcher holds the replay result and tracks the chain's decision |
+
+**The condition.** The guarantee needs one honest watcher during each window, ours or anyone's. An unchallenged divergent batch would finalize on L1, and withdrawals would follow it. Desk shows when the watcher falls behind (`unwatched`). With `VEIL_WATCHER_MNEMONIC` set, it challenges a divergent batch from that account. Either way, it records the chain's verdict, including a race won by a third-party watcher, as on 18 Nov.
+
+The watcher reproduces Diana's verdict on the real batch 2: it flags the forgery with a fraud proof byte-identical to the one the chain upheld (sha256 `ef5f485b…b28c`), then accepts the honest replacement (`finality.test.mjs`). The live click-to-reader measurement is pending ([#12](https://github.com/ryssroad/veil/issues/12)).
 
 **Limits of v1.**
 - `auditorKey` is the payer's signed *declaration*. A reader cannot prove that the second slot really opens for the auditor; confirmed auditor access would need an acknowledgement protocol.
@@ -93,7 +111,7 @@ None of these needs a key. Decrypting an invoice needs a reader's own seed (`nod
 
 Run `npm ci` and `npm run desk` in a checkout with the existing v1 reader files. Open **http://127.0.0.1:8788**. The Desk reads Diana, replays the inbox and opens invoices locally. The payer seed is `.private/payer-l2.seed`. The payee and auditor directories default to `.private/clients/payee` and `.private/clients/auditor`. Override them with `VEIL_PAYEE_DIR` and `VEIL_AUDITOR_DIR`. Set `VEIL_AUDITOR` to select another registered auditor.
 
-The default session is read-only. To enable Pay, Top up and Submit batch, start the server with `VEIL_OPERATOR_MNEMONIC` set to the **path** of the rollup creator’s mnemonic file. Inspect key rejection jumps to a previously rejected substitution and shows the current binding. Export CSV includes verified invoices in the selected batch or all batches.
+The default session is read-only. To enable Pay, Top up and Submit batch, start the server with `VEIL_OPERATOR_MNEMONIC` set to the **path** of the rollup creator’s mnemonic file. Inspect key rejection jumps to a previously rejected substitution and shows the current binding. Export CSV includes settled invoices in the selected batch or all batches. Each invoice shows when it was determined and when it settles. A Desk payment also shows Pay → determined and Pay → settled; `GET /api/finality.json` returns those timestamps for each reader, with the committed block, the batch submission and the finalization. Set `VEIL_WATCHER_MNEMONIC` to the path of a funded account, not the rollup creator, to challenge divergent batches automatically.
 
 Start `npm run desk -- --record demo` to record the dashboard and use **Mark scene** to label moments. The local JSONL in `video/sessions/` contains decrypted demo invoices. Open `/?replay` and inject each recorded state via `window.renderState(event.state, event.t)`, advancing the clock with `window.renderTick(event.t)`. Recording timestamps use epoch milliseconds.
 
@@ -118,6 +136,7 @@ Starting the server sends no transaction. The **REC** badge and **Mark scene** b
 | Path | Purpose |
 |---|---|
 | `veil.mjs`, `veil.test.mjs` | Veil v1: invoice body, sealing and opening, reader-key statements, execution replay, importer |
+| `finality.mjs`, `finality.test.mjs` | Fast finality: inbox entries bound to their L1 transactions, the reader's batch watcher, determined/disputed rules |
 | `v1-live.mjs` | v1 live run: clients, auditor registry, statements, payment, batch, reads |
 | `invoice.mjs`, `operator.mjs`, `audit.mjs` | first experiment (batch 0) and its public and reader audits |
 | `withdrawal.mjs`, `replay-withdrawal.mjs`, `verify-withdrawal.mjs` | withdrawal, offline replay, live verification |

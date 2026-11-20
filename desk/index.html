@@ -105,16 +105,21 @@
       .bound,
       .finalized,
       .verified,
+      .settled,
+      .determined,
       .executed {
         color: var(--green);
       }
       .submitted,
       .warn,
+      .unwatched,
       .challenged {
         color: var(--amber);
       }
       .bad,
       .rejected,
+      .disputed,
+      .diverged,
       .conflict,
       .unverified,
       .no-op {
@@ -837,10 +842,41 @@
       function countdown(b) {
         return b?.status === 'submitted' ? ' <span class="sub" data-clock="' + b.index + '"></span>' : '';
       }
+      // The watcher re-checks every pending batch on each read. A determination
+      // is only current while those checks are; replays show the recorded view.
+      const STALE_MS = 15000;
+      const watchLag = () => (current && !replay ? Math.max(0, clock() - current.watch.checkedAt) : 0);
+      const stale = () => watchLag() > STALE_MS;
+      const effective = (r) => (r.status === 'determined' && stale() ? 'unwatched' : r.status);
+      const secs = (ms) => (ms / 1000).toFixed(1) + ' s';
+      function watchStatus() {
+        const w = current?.watch;
+        if (!w) return '';
+        if (w.fault != null) return pill('disputed') + ' <span class="small error">L1 finalized batch ' + w.fault + ' diverges</span>';
+        if (w.diverged.length)
+          return pill('disputed') + ' <span class="small error">Batch ' + w.diverged.join(', ') + ' diverges · challenge window open</span>';
+        if (stale()) return pill('unwatched') + ' <span class="small warn">Watcher last checked ' + secs(watchLag()) + ' ago</span>';
+        return (
+          '<span class="small ok"><i class="dot"></i>Watcher · ' +
+          w.pending +
+          ' pending batch' +
+          (w.pending === 1 ? '' : 'es') +
+          ' checked' +
+          (replay ? '' : ' ' + secs(watchLag()) + ' ago') +
+          '</span>'
+        );
+      }
       function updateClocks() {
-        if (current)
-          for (const el of document.querySelectorAll('[data-clock]'))
-            el.textContent = remaining(current.batches.find((b) => String(b.index) === el.dataset.clock));
+        if (!current) return;
+        for (const el of document.querySelectorAll('[data-clock]'))
+          el.textContent = remaining(current.batches.find((b) => String(b.index) === el.dataset.clock));
+        if ($('watch')) $('watch').innerHTML = watchStatus();
+        const lagging = stale();
+        if (lagging !== current.lagging) {
+          current.lagging = lagging;
+          viewKey = undefined;
+          render(current);
+        }
       }
       function info(e) {
         if (e.kind === 'transfer' || e.kind === 'withdrawal')
@@ -870,6 +906,7 @@
       }
       function renderPublic(s) {
         $('public').innerHTML =
+          renderIncidents(s) +
           '<div class="rowtitle"><h3>Inbox entries</h3><span class="sub">Newest first</span></div><div class="list">' +
           s.entries
             .map((e) => {
@@ -885,6 +922,7 @@
                 escapeHtml(e.kind[0].toUpperCase() + e.kind.slice(1)) +
                 '</strong>' +
                 pill(b?.status || 'pending') +
+                (b?.verdict && b.verdict !== 'ok' ? ' ' + pill('diverged') : '') +
                 '</div><div class="sub">H ' +
                 escapeHtml(e.height) +
                 ' · ' +
@@ -919,20 +957,77 @@
         pqcSignature: 'PQC signature',
         chainBinding: 'Chain binding',
       };
+      function timing(r, s) {
+        if (!r.clickAt) return '';
+        const b = s.batches.find((b) => b.index === r.batch);
+        const parts = [];
+        if (r.observed?.determined) parts.push('Pay → determined <b>' + secs(r.observed.determined - r.clickAt) + '</b>');
+        if (r.observed?.settled) parts.push('Pay → settled <b>' + secs(r.observed.settled - r.clickAt) + '</b>');
+        else if (b?.deadline) parts.push('settles after ' + at(b.deadline * 1000));
+        return parts.length ? '<div class="small">' + parts.join(' · ') + '</div>' : '';
+      }
       function receipt(r, s) {
         const b = s.batches.find((b) => b.index === r.batch);
-        if (r.status === 'verified')
+        const determined =
+          '<div class="small ok">Determined at H ' + escapeHtml(r.height) + ' · ' + at(r.time) + '</div>';
+        const status = effective(r);
+        if (status === 'settled')
           return (
-            '<div class="small ok">Finalized · receipt verified</div><div class="checks">' +
+            determined +
+            '<div class="small ok">Settled · batch ' +
+            r.batch +
+            ' finalized at H ' +
+            escapeHtml(r.settledHeight) +
+            ' · receipt verified</div><div class="checks">' +
             Object.entries(r.receiptChecks)
               .map(([k, v]) => '<span>' + (v ? '✓ ' : '× ') + escapeHtml(labels[k] || k) + '</span>')
               .join('') +
-            '</div>'
+            '</div>' +
+            timing(r, s)
           );
-        if (r.status === 'pending') return '<div class="small">Sealed, not yet in a batch</div>';
-        if (r.status === 'submitted')
-          return '<div class="small warn">In batch ' + r.batch + ' · challenge window' + countdown(b) + '</div>';
+        if (status === 'determined' || status === 'unwatched')
+          return (
+            (status === 'unwatched'
+              ? '<div class="small warn">Watcher last checked ' + secs(watchLag()) + ' ago · determination not current</div>'
+              : determined) +
+            (b
+              ? '<div class="small warn">In batch ' + r.batch + ' (' + escapeHtml(b.status) + ') · settles on L1 when its window closes' + countdown(b) + '</div>'
+              : '<div class="small">Not in a batch yet · settles on L1 after its batch finalizes</div>') +
+            timing(r, s)
+          );
+        if (status === 'disputed')
+          return '<div class="small error">' + escapeHtml(r.reason) + ' · watcher holds the replay result until the chain decides</div>';
         return '<div class="small error">' + escapeHtml(r.reason || r.status) + '</div>';
+      }
+      function renderIncidents(s) {
+        if (!s.incidents?.length) return '';
+        return (
+          '<div class="block"><div class="rowtitle"><h3>Divergent batches</h3><span class="sub">' +
+          s.incidents.length +
+          '</span></div><div class="list">' +
+          s.incidents
+            .map(
+              (i) =>
+                '<div class="empty"><b>Batch ' +
+                i.index +
+                '</b> ' +
+                pill(i.status === 'submitted' || i.status === 'challenged' ? 'disputed' : i.status === 'finalized' ? 'diverged' : 'rejected') +
+                (i.status === 'submitted' || i.status === 'challenged'
+                  ? '<br>Claimed root ' + short(i.stateRoot) + ' · replay ' + short(i.expected?.stateRoot) +
+                    (i.deadline ? ' · window until ' + at(i.deadline * 1000) : '')
+                  : '') +
+                (i.upheld
+                  ? '<br>Fraud upheld at H ' + i.upheld.height + ' by ' + short(i.upheld.challenger) + ' · <a target="_blank" rel="noreferrer" href="https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/' +
+                    escapeHtml(i.upheld.hash) + '">' + short(i.upheld.hash) + '</a>'
+                  : '') +
+                (i.ours?.hash
+                  ? '<br>Our challenge ' + short(i.ours.hash) + ' · code ' + escapeHtml(i.ours.code) + (i.ours.code === 0 ? '' : ' (lost or refused)')
+                  : i.ours?.error ? '<br>Our challenge: ' + escapeHtml(i.ours.error) : '') +
+                '</div>',
+            )
+            .join('') +
+          '</div></div>'
+        );
       }
       function renderPayee(s) {
         const p = s.payee;
@@ -954,7 +1049,7 @@
                 '<article class="ticket"><div class="rowtitle"><span class="value">' +
                 qor(r.invoice.amountUqor) +
                 ' QOR</span>' +
-                pill(r.status) +
+                pill(effective(r)) +
                 '</div><p class="description">' +
                 escapeHtml(r.invoice.description) +
                 '</p><p class="sub">#' +
@@ -1010,7 +1105,7 @@
               '</option>',
           )
           .join('');
-        const canExport = rows.some((r) => r.status === 'verified') && !replay;
+        const canExport = rows.some((r) => r.status === 'settled') && !replay;
         $('audit').innerHTML =
           (a.warning ? '<p class="notice">' + escapeHtml(a.warning) + '</p>' : '') +
           '<div class="block"><h3>Registry identity</h3>' +
@@ -1037,7 +1132,7 @@
                     '</td><td><b>' +
                     qor(r.invoice.amountUqor) +
                     '</b><div>' +
-                    pill(r.status) +
+                    pill(effective(r)) +
                     '</div><span class="sub">Batch ' +
                     (r.batch ?? '—') +
                     '</span></td></tr>',
@@ -1045,7 +1140,7 @@
                 .join('') +
               '</tbody></table>'
             : empty('No declared invoices.')) +
-          '<div class="rowtitle" style="margin-top:10px"><span class="small">Finalized invoices only</span>' +
+          '<div class="rowtitle" style="margin-top:10px"><span class="small">Export: settled invoices only</span>' +
           (canExport
             ? '<a class="button" href="/api/invoices.csv' +
               (selectedBatch ? '?batch=' + selectedBatch : '') +
@@ -1107,6 +1202,12 @@
         }
       }
       function render(s) {
+        // Sessions recorded before #12 call a settled invoice "verified".
+        for (const r of [...(s.payee?.rows || []), ...(s.auditor?.rows || [])])
+          if (r.status === 'verified') {
+            r.status = 'settled';
+            r.settledHeight ??= s.batches.find((b) => b.index === r.batch)?.height;
+          }
         const first = !current;
         current = s;
         const key = JSON.stringify(s);
@@ -1125,7 +1226,10 @@
             '<span class="small"><code>' +
             (s.inbox.head - s.inbox.consumed) +
             '</code> pending</span>' +
-            (b ? '<span class="small">Batch <code>' + b.index + '</code></span>' + pill(b.status) + countdown(b) : '');
+            (b ? '<span class="small">Batch <code>' + b.index + '</code></span>' + pill(b.status) + countdown(b) : '') +
+            '<span id="watch">' +
+            watchStatus() +
+            '</span>';
           renderPublic(s);
           renderPayee(s);
           renderAuditor(s);

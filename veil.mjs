@@ -310,7 +310,27 @@ export function replayExecutions(entries, ledger = new QledgerLedger()) {
   return { executions: out, withdrawals, ledger };
 }
 
-/** The co-posted envelope of a transfer: the next entry, same height and poster. */
+/**
+ * The co-posted envelope of a transfer, bound to the exact L1 transaction: the
+ * next inbox entry, carried by the next message of the same successful
+ * transaction (same hash, code 0). Entries need `tx` = { hash, code, msgIndex }.
+ */
+export function coPostedInTx(entries, transferSequence) {
+  const i = entries.findIndex((e) => e.sequence === transferSequence);
+  const t = entries[i];
+  const n = entries[i + 1];
+  if (!t?.tx || !n?.tx || n.sequence !== t.sequence + 1) return undefined;
+  if (t.tx.hash !== n.tx.hash || t.tx.code !== 0 || n.tx.code !== 0) return undefined;
+  if (!Number.isInteger(t.tx.msgIndex) || n.tx.msgIndex !== t.tx.msgIndex + 1) return undefined;
+  if (BigInt(n.height) !== BigInt(t.height) || n.poster !== t.poster) return undefined;
+  return n;
+}
+
+/**
+ * The co-posted envelope of a transfer: the next entry, same height and poster.
+ * Two transactions in one block can share both, so readers use `coPostedInTx`;
+ * this weaker check remains for the batch 0 scripts.
+ */
 export function coPostedEnvelope(entries, transferSequence) {
   const i = entries.findIndex((e) => e.sequence === transferSequence);
   const t = entries[i];
