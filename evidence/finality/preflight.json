@@ -1,0 +1,72 @@
+{
+  "at": "2026-11-20T22:32:42.945Z",
+  "chainId": "qorechain-diana",
+  "rollupId": "veil-pay-1",
+  "height": "10458153",
+  "operator": {
+    "address": "qor1a5j8wjpxpqc6f7htyv92042nrt7gaegpezdhx4",
+    "balanceUqor": "1978515010",
+    "pqcRegistered": true,
+    "possessionProven": true
+  },
+  "watcher": {
+    "address": "qor1lkgyeaz5sukszwxrfrra9mqa7rxjl4g5gq49yu",
+    "balanceUqor": "4460000",
+    "pqcRegistered": true,
+    "possessionProven": true
+  },
+  "payer": {
+    "account": "b28704147223f0f87fe15d21ddbfbd2f9555e71bdaa5fdf20f9001a67a52013b",
+    "balance": "1850000",
+    "nonce": "4"
+  },
+  "payee": "12bd9a469e2e812f34f27c75a80b6b161c4cf352509c96be7fc5fc86d8ad915e",
+  "payeeWarning": null,
+  "auditorWarning": null,
+  "operatorBondUqor": "1000000000",
+  "challengeBond": "1000000000",
+  "windowSecs": 3600,
+  "inbox": {
+    "head": 17,
+    "consumed": 17
+  },
+  "batches": [
+    {
+      "index": 0,
+      "status": "finalized",
+      "verdict": "ok"
+    },
+    {
+      "index": 1,
+      "status": "finalized",
+      "verdict": "ok"
+    },
+    {
+      "index": 2,
+      "status": "finalized",
+      "verdict": "ok"
+    },
+    {
+      "index": 3,
+      "status": "finalized",
+      "verdict": "ok"
+    },
+    {
+      "index": 4,
+      "status": "finalized",
+      "verdict": "ok"
+    },
+    {
+      "index": 5,
+      "status": "finalized",
+      "verdict": "ok"
+    }
+  ],
+  "watch": {
+    "checkedAt": 1795213959788,
+    "pending": 0,
+    "diverged": [],
+    "fault": null,
+    "challenging": false
+  }
+}

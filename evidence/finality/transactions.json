@@ -1,0 +1,36 @@
+{
+  "at": "2026-11-20T22:36:01.913Z",
+  "payment": {
+    "hash": "BBE9E446DDB2F70510FE3599AADD0DF932266267C4EA52DB25792440E14C2D97",
+    "code": 0,
+    "height": "10458203",
+    "fee": [
+      {
+        "denom": "uqor",
+        "amount": "540000"
+      }
+    ],
+    "gasUsed": "600739",
+    "types": [
+      "/qorechain.rdk.v1.MsgPostRollupData",
+      "/qorechain.rdk.v1.MsgPostRollupData"
+    ]
+  },
+  "batch": {
+    "hash": "2750527E47118CEBE2B7451B3142772E6D8831A196252941CCCD1D02B2509D2A",
+    "code": 0,
+    "height": "10458221",
+    "fee": [
+      {
+        "denom": "uqor",
+        "amount": "270000"
+      }
+    ],
+    "gasUsed": "729827",
+    "types": [
+      "/qorechain.rdk.v1.MsgSubmitBatch"
+    ]
+  },
+  "operatorBalanceUqor": "1977606970",
+  "watcherBalanceUqor": "4460000"
+}
