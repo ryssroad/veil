@@ -91,8 +91,9 @@ function decorate(state) {
  * challenge.
  */
 async function watchChain() {
-  // Read before the view, so the view is at least this recent. Only verdict attribution uses it.
-  const height = await client.rest.getLatestHeight().catch(() => undefined);
+  // Chain heights read before and after the view bound when a batch was rejected. Only verdict attribution uses them.
+  const tip = () => client.rest.getLatestHeight().catch(() => undefined);
+  const heightBefore = await tip();
   const [roll, inbox, latest] = await Promise.all([
     client.rest.getRollup(rollupId), client.rest.getInbox(rollupId), client.rest.getLatestBatch(rollupId),
   ]);
@@ -117,7 +118,7 @@ async function watchChain() {
     const windowSecs = roll.challengeWindowSec ?? (await client.rest.getParams()).defaultChallengeWindow;
     view = { key, roll, inbox, all, entries, windowSecs, watch: watchBatches({ entries, batches: all }) };
   }
-  const incidents = await tracker.update({ watch: view.watch, windowSecs: view.windowSecs, changed, height });
+  const incidents = await tracker.update({ watch: view.watch, windowSecs: view.windowSecs, changed, heightBefore, heightAfter: await tip() });
   // The replay held: this view is the base for the next read, whatever fails after it.
   last = view;
   lastBatches = all;

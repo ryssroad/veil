@@ -21,7 +21,11 @@ function harness({ send, lookupTx = async () => null, outcomes = () => [] } = {}
     fetchOutcomes: async (minHeight) => { calls.outcomes.push(minHeight); return outcomes(); },
     now: () => t,
   });
-  const step = async (ms, watch, changed = false, height) => { t += ms; return tracker.update({ watch, windowSecs: WINDOW, changed, height }); };
+  // `before` and `after` are the chain heights read around the view; omit them for a failing height lookup.
+  const step = async (ms, watch, changed = false, before, after = before) => {
+    t += ms;
+    return tracker.update({ watch, windowSecs: WINDOW, changed, heightBefore: before, heightAfter: after });
+  };
   return { calls, step };
 }
 
@@ -69,10 +73,10 @@ test('a broadcast the chain never saw is sent again', async () => {
 test('another watcher wins: our failed challenge stops and the chain outcome is recorded', async () => {
   let events = [];
   const h = harness({ send: () => ({ hash: 'A'.repeat(64), code: 9 }), outcomes: () => events });
-  let [i] = await h.step(0, view(forged()), true);
+  let [i] = await h.step(0, view(forged()), true, 100);
   assert.deepEqual([i.ours.state, i.ours.code, i.upheld], ['retrying', 9, null]);
   events = [upheld];
-  [i] = await h.step(3000, view(forged({ status: 'rejected', verdict: 'rolled-back' })), true);
+  [i] = await h.step(3000, view(forged({ status: 'rejected', verdict: 'rolled-back' })), true, 103);
   assert.equal(i.status, 'rejected');
   assert.deepEqual([i.ours.state, i.ours.reason], ['stopped', 'batch is rejected']);
   assert.equal(i.upheld.challenger, 'qor1thirdparty');
@@ -173,13 +177,13 @@ test('broadcast failures are read from the error fields, never from its text', (
 test('each submission is its own incident: a resubmission at the same index and root gets a fresh challenge', async () => {
   let events = [];
   const h = harness({ send: (n) => ({ hash: (n === 1 ? 'A' : 'B').repeat(64), code: 0, height: n === 1 ? 102 : 302 }), outcomes: () => events });
-  await h.step(0, view(forged()), true);
+  await h.step(0, view(forged()), true, 100);
   events = [upheld];
-  await h.step(3000, view(forged({ status: 'rejected', verdict: 'rolled-back' })), true);
+  await h.step(3000, view(forged({ status: 'rejected', verdict: 'rolled-back' })), true, 103);
   assert.equal(h.calls.send, 1);
   // The same claim again, submitted later.
   const again = forged({ submittedAt: 300, submittedTime: 1600 });
-  let list = await h.step(600_000, view(again), true);
+  let list = await h.step(600_000, view(again), true, 301);
   assert.equal(h.calls.send, 2, 'the replacement is challenged');
   assert.equal(list.length, 2);
   const [second, first] = list;
@@ -190,59 +194,104 @@ test('each submission is its own incident: a resubmission at the same index and 
     [300, 'submitted', undefined, 'B'.repeat(64), 1, null]);
   // Its own verdict, when it comes, goes to the second submission only.
   events = [upheld, { ...upheld, hash: 'F'.repeat(64), height: 302 }];
-  list = await h.step(3000, view(forged({ ...again, status: 'rejected', verdict: 'rolled-back' })), true);
+  list = await h.step(3000, view(forged({ ...again, status: 'rejected', verdict: 'rolled-back' })), true, 303);
   assert.deepEqual(list.map((i) => [i.submittedAt, i.upheld.hash]), [[300, 'F'.repeat(64)], [100, upheld.hash]]);
   assert.equal(list.length, 2);
 });
 
-// -------------------------------------------------- third review of PR 13
+// ------------------------------------- third and fourth reviews of PR 13
+//
+// A verdict is linked to a submission only when the observations leave one
+// owner. Each standalone entry keeps the event's hash, height and batch index.
 
-const hashes = (list) => list.map((i) => i.upheld?.hash).filter(Boolean);
+const HA = 'A1'.repeat(32), HB = 'B1'.repeat(32), HC = 'C1'.repeat(32);
+const event = (hash, height, index = 2) => ({ index, hash, height, challenger: 'qor1thirdparty' });
+const gone = (b) => forged({ ...b, status: 'rejected', verdict: 'rolled-back' });
+/** [submittedAt or null for a standalone event, status, linked or standalone hash] per entry. */
+const shape = (list) => list.map((i) => [i.submittedAt ?? null, i.status, i.submittedAt === undefined ? i.upheld.hash : i.upheld?.hash ?? null]);
+const once = (list, ...hashes) => assert.deepEqual(list.map((i) => i.upheld?.hash).filter(Boolean).sort(), [...hashes].sort());
 
-for (const heights of [true, false]) {
-  test(`a verdict and a resubmission in one block: the verdict stays with the first submission (${heights ? 'view heights known' : 'height lookup failing'})`, async () => {
-    const event = { ...upheld, height: 105 };
-    let events = [];
-    const h = harness({ send: (n) => (n === 1 ? { hash: 'A'.repeat(64), code: 9 } : { hash: 'B'.repeat(64), code: null }), outcomes: () => events });
-    const at = (height) => (heights ? height : undefined);
-    // Height 100: Desk observes divergent submission A at index 2.
-    await h.step(0, view(forged({ submittedAt: 100 })), true, at(100));
-    // Block 105: a challenge against A is upheld, then B is accepted at index 2 with the same root.
-    events = [event];
-    const b = forged({ submittedAt: 105, submittedTime: 1010 });
-    let list = await h.step(8000, view(b), true, at(106));
-    assert.equal(list.length, 2);
-    const [second, first] = list;
-    assert.deepEqual([first.submittedAt, first.status, first.upheld?.hash], [100, 'rejected', event.hash]);
-    assert.deepEqual([second.submittedAt, second.status, second.upheld, second.ours.attempts, second.ours.hash],
-      [105, 'submitted', null, 1, 'B'.repeat(64)]);
-    assert.deepEqual(hashes(list), [event.hash], 'the event appears exactly once');
-    // B's own verdict later goes to B, and A keeps its own.
-    events = [event, { ...upheld, hash: 'F'.repeat(64), height: 112 }];
-    list = await h.step(8000, view(forged({ ...b, status: 'rejected', verdict: 'rolled-back' })), true, at(113));
-    assert.deepEqual(list.map((i) => [i.submittedAt, i.upheld.hash]), [[105, 'F'.repeat(64)], [100, event.hash]]);
-  });
-}
-
-test('a verdict against a submission Desk never saw is not given to the resubmission from the same block', async () => {
-  // Block 105: an unseen submission is upheld against, then B is accepted. Desk first reads at 106.
-  const event = { ...upheld, height: 105 };
-  let events = [event];
-  const h = harness({ outcomes: () => events });
-  const b = forged({ submittedAt: 105, submittedTime: 1010 });
-  let list = await h.step(0, view(b), true, 106);
-  assert.deepEqual(list.map((i) => [i.status, i.submittedAt ?? null, i.upheld?.hash ?? null]),
-    [[`submitted`, 105, null], ['rejected', null, event.hash]]);
-  // B is rejected at 112 by its own verdict. The earlier event still is not B's.
-  events = [event, { ...upheld, hash: 'F'.repeat(64), height: 112 }];
-  list = await h.step(8000, view(forged({ ...b, status: 'rejected', verdict: 'rolled-back' })), true, 113);
-  assert.deepEqual(list.find((i) => i.submittedAt === 105).upheld.hash, 'F'.repeat(64));
-  assert.deepEqual(hashes(list).sort(), [event.hash, 'F'.repeat(64)].sort());
+test('a verdict and a resubmission in one block, both submissions observed: the verdict stays with the first', async () => {
+  let events = [];
+  const h = harness({ send: (n) => (n === 1 ? { hash: 'A'.repeat(64), code: 9 } : { hash: 'B'.repeat(64), code: null }), outcomes: () => events });
+  // Height 100: Desk observes divergent submission A at index 2.
+  await h.step(0, view(forged({ submittedAt: 100 })), true, 100);
+  // Block 105: a challenge against A is upheld, then B is accepted at index 2 with the same root.
+  events = [event(HA, 105)];
+  const b = { submittedAt: 105, submittedTime: 1010 };
+  let list = await h.step(8000, view(forged(b)), true, 106);
+  assert.deepEqual(shape(list), [[105, 'submitted', null], [100, 'rejected', HA]]);
+  assert.deepEqual([list[0].ours.attempts, list[0].ours.hash], [1, 'B'.repeat(64)], 'B gets a fresh attempt');
+  once(list, HA);
+  events = [event(HA, 105), event(HB, 112)];
+  list = await h.step(8000, view(gone(b)), true, 113);
+  assert.deepEqual(shape(list), [[105, 'rejected', HB], [100, 'rejected', HA]]);
+  once(list, HA, HB);
 });
 
-test('a submission still pending never owns a verdict, with or without a view height', async () => {
-  const event = { ...upheld, height: 105 };
-  const h = harness({ outcomes: () => [event] });
-  const list = await h.step(0, view(forged({ submittedAt: 105, submittedTime: 1010 })), true);
-  assert.deepEqual(list.map((i) => [i.status, i.upheld?.hash ?? null]), [['submitted', null], ['rejected', event.hash]]);
+test('the height read and the batch read straddle a block: seeing B pending proves it survived its own block', async () => {
+  // Desk missed A. Height read: 104. Block 105: A is rejected (HA), B is submitted. The batch read already shows B.
+  let events = [event(HA, 105)];
+  const h = harness({ outcomes: () => events });
+  const b = { submittedAt: 105, submittedTime: 1010 };
+  let list = await h.step(0, view(forged(b)), true, 104, 105);
+  assert.deepEqual(shape(list), [[105, 'submitted', null], [null, 'rejected', HA]]);
+  // Next poll after B is rejected at 112 (HB).
+  events = [event(HA, 105), event(HB, 112)];
+  list = await h.step(8000, view(gone(b)), true, 113);
+  assert.deepEqual(shape(list), [[105, 'rejected', HB], [null, 'rejected', HA]]);
+  once(list, HA, HB);
+  const alone = list.find((i) => i.submittedAt === undefined);
+  assert.deepEqual([alone.index, alone.upheld.height, alone.upheld.hash], [2, 105, HA]);
+});
+
+test('a later verdict is not given to a submission already seen rejected', async () => {
+  let events = [];
+  const h = harness({ outcomes: () => events });
+  const s = { index: 3, submittedAt: 100 };
+  await h.step(0, view(forged(s)), true, 100);
+  // The snapshot at 105 shows it rejected, with no verdict at index 3 (rolled back with its parent).
+  let list = await h.step(8000, view(gone(s)), true, 105);
+  assert.deepEqual(shape(list), [[100, 'rejected', null]]);
+  assert.equal(list[0].rejectedBy, 105);
+  // Desk misses the replacement. At 112 a verdict for it arrives at index 3.
+  events = [event(HC, 112, 3)];
+  list = await h.step(8000, view(), true, 113);
+  assert.deepEqual(shape(list), [[null, 'rejected', HC], [100, 'rejected', null]]);
+  once(list, HC);
+  const alone = list.find((i) => i.submittedAt === undefined);
+  assert.deepEqual([alone.index, alone.upheld.height], [3, 112]);
+});
+
+test('no unique owner, no link: two verdicts fit one submission, or one verdict fits two', async () => {
+  // Sparse polls: pending at 100, gone by 120, and two verdicts at the index in between.
+  let events = [event(HA, 105), event(HB, 112)];
+  let h = harness({ outcomes: () => events });
+  await h.step(0, view(forged({ submittedAt: 100 })), true, 100);
+  let list = await h.step(8000, view(), true, 120);
+  assert.deepEqual(shape(list).map(([at, , hash]) => [at, hash]).sort(), [[100, null], [null, HA], [null, HB]].sort());
+  once(list, HA, HB);
+  // Two submissions whose windows overlap: the height before the second view was not read.
+  events = [event(HA, 105)];
+  h = harness({ outcomes: () => events });
+  const b = { submittedAt: 103, submittedTime: 1010 };
+  await h.step(0, view(forged({ submittedAt: 100 })), true, 100);
+  await h.step(8000, view(forged(b)), true, undefined, 106);
+  list = await h.step(8000, view(gone(b)), true, 120);
+  assert.deepEqual(shape(list), [[null, 'rejected', HA], [103, 'rejected', null], [100, 'rejected', null]]);
+  once(list, HA);
+});
+
+test('without any height read nothing is linked, and every verdict stays visible once', async () => {
+  let events = [];
+  const h = harness({ outcomes: () => events });
+  await h.step(0, view(forged({ submittedAt: 100 })), true);
+  events = [event(HA, 105)];
+  const b = { submittedAt: 105, submittedTime: 1010 };
+  let list = await h.step(8000, view(forged(b)), true);
+  assert.deepEqual(shape(list), [[105, 'submitted', null], [null, 'rejected', HA], [100, 'rejected', null]]);
+  // A height read succeeds later: it bounds the first rejection, and the verdict finds its owner.
+  list = await h.step(8000, view(forged(b)), false, 107);
+  assert.deepEqual(shape(list), [[105, 'submitted', null], [100, 'rejected', HA]]);
+  once(list, HA);
 });
