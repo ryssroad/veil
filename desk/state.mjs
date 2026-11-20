@@ -18,11 +18,14 @@ const times = new Map();
 let lastKey, lastState, lastBatches, last, keys, watcher, creator;
 
 // Wall-clock observations for the finality measurement (#12).
-const clicks = new Map();      // tx hash -> { clickAt, sentAt, height }
+const clicks = new Map();      // tx hash -> { clickAt, handedAt, sentAt, height }
+let paying = 0;                // Desk payments between the click and the broadcast's return
+const FAST_READS_MS = 60_000;
+const receipts = new Map();    // `${batchIndex}:${stateRoot}` -> a receipt verification that passed
 const observed = new Map();    // `${reader}:${tx hash}:${status}` -> first ms this reader produced it
 
 /** Chain access the incident tracker uses; tests replace these. */
-export const deps = { challenge, txResult, challengeOutcomes, now: () => Date.now() };
+export const deps = { challenge, txResult, challengeOutcomes, verifyBatch, now: () => Date.now() };
 const tracker = createIncidentTracker({
   send: watching ? async (index, proofHex) => {
     watcher ??= await mnemonicAccount(watcherFile);
@@ -34,11 +37,29 @@ const tracker = createIncidentTracker({
   now: () => deps.now(),
 });
 
-/** Called by the server when a Desk payment's broadcast returns. The readers may already have seen it. */
-export function notePayment(hash, clickAt, height) {
-  clicks.set(hash, { clickAt, sentAt: Date.now(), height: String(height) });
+/**
+ * Called by the server when Pay is clicked. The readers then read Diana on
+ * every tick: a reader's result must not wait for the payer's client to learn
+ * that its own transaction was included. Returns the function that ends it.
+ */
+export function beginPayment() {
+  paying += 1;
+  let open = true;
+  return () => { if (open) { open = false; paying -= 1; } };
 }
-export const measuring = () => [...clicks.keys()].some(hash => !observed.has(`auditor:${hash}:settled`));
+/**
+ * Called by the server when a Desk payment's broadcast returns. The readers may
+ * already have seen it. `handedAt` is when the node accepted the transaction.
+ */
+export function notePayment(hash, clickAt, height, handedAt) {
+  clicks.set(hash, { clickAt, handedAt: handedAt ?? null, sentAt: Date.now(), height: String(height) });
+}
+const reader = (name, hash, status) => observed.has(`${name}:${hash}:${status}`);
+/** Read on every tick: a payment is in flight, or one is committed and a reader has not determined it yet. */
+export const measuring = () => paying > 0 || [...clicks].some(([hash, c]) => Date.now() - c.sentAt < FAST_READS_MS
+  && !(reader('payee', hash, 'determined') && reader('auditor', hash, 'determined')));
+/** Keep reading at the slow cadence: a measured payment has not settled for both readers. */
+export const settling = () => [...clicks.keys()].some(hash => !(reader('payee', hash, 'settled') && reader('auditor', hash, 'settled')));
 
 function identities() {
   if (keys) return keys;
@@ -145,10 +166,13 @@ export async function snapshot() {
   const { bindings, events } = discoverReaderKeys(entries);
   const { ledger, executions, withdrawals } = replayExecutions(entries);
   const paymentsBySequence = new Map([...executions, ...withdrawals].map(tx => [tx.sequence, tx]));
-  const receipts = new Map();
+  // A finalized batch's receipt does not change: verify it once per root and reuse a pass. A failure is asked again.
+  const asked = new Map();
   const receiptFor = batch => {
-    if (!receipts.has(batch.batchIndex)) receipts.set(batch.batchIndex, verifyBatch(batch));
-    return receipts.get(batch.batchIndex);
+    const id = `${batch.batchIndex}:${batch.stateRoot}`;
+    if (receipts.has(id)) return receipts.get(id);
+    if (!asked.has(id)) asked.set(id, deps.verifyBatch(batch).then(r => { if (r.valid) receipts.set(id, r); return r; }));
+    return asked.get(id);
   };
   const bound = bindings.get(id.payeeId);
   const ownKey = kemFingerprint(id.payee.mlkemPublicKey);
@@ -195,7 +219,7 @@ export async function finalityReport() {
     const committedTime = await blockTime(c.height).catch(() => null);
     const finalizedTime = batch?.finalizedAt ? await blockTime(batch.finalizedAt).catch(() => null) : null;
     const reader = name => ({ determined: observed.get(`${name}:${hash}:determined`) ?? null, settled: observed.get(`${name}:${hash}:settled`) ?? null });
-    out.push({ tx: hash, sequence: row?.sequence ?? null, clickAt: c.clickAt, broadcastReturnedAt: c.sentAt,
+    out.push({ tx: hash, sequence: row?.sequence ?? null, clickAt: c.clickAt, handedToNodeAt: c.handedAt, broadcastReturnedAt: c.sentAt,
       committed: { height: c.height, time: committedTime }, payee: reader('payee'), auditor: reader('auditor'),
       batch: batch ? { index: batch.index, submittedAt: batch.submittedAt, submittedTime: batch.submittedTime,
         finalizedAt: batch.finalizedAt, finalizedTime } : null });

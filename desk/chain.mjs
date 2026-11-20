@@ -41,8 +41,34 @@ export const payeeKeys = (dir) => ({
   seal: sealKeysFromSeed(readFileSync(join(dir, 'seal.seed'))),
 });
 
+/**
+ * Replace the transport's wait for inclusion. CosmJS sleeps a fixed 3 s after
+ * the node accepts a transaction before it first looks for it, which is two
+ * Diana blocks. This looks at once and then every `pollMs`, and records when
+ * the node accepted the transaction (`transport.handedAt`). The result and the
+ * timeout error keep CosmJS's shape, so callers and `broadcastFailure` are unchanged.
+ */
+export function quickInclusion(transport, { pollMs = 400, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  transport.broadcastTx = async (tx, timeoutMs = 60_000) => {
+    const txId = await transport.broadcastTxSync(tx);
+    transport.handedAt = now();
+    for (;;) {
+      const result = await transport.getTx(txId);
+      if (result) {
+        return { code: result.code, height: result.height, txIndex: result.txIndex, events: result.events, rawLog: result.rawLog,
+          transactionHash: txId, msgResponses: result.msgResponses, gasUsed: result.gasUsed, gasWanted: result.gasWanted };
+      }
+      if (now() - transport.handedAt >= timeoutMs) {
+        throw new TimeoutError(`Transaction with ID ${txId} was submitted but was not yet found on the chain. There was a wait of ${timeoutMs / 1000} seconds.`, txId);
+      }
+      await sleep(pollMs);
+    }
+  };
+  return transport;
+}
+
 export async function broadcast(account, messages, name, { mode = 'hybrid', registry = createRdkRegistry() } = {}) {
-  const transport = await StargateClient.connect(client.network.endpoints.rpc);
+  const transport = quickInclusion(await StargateClient.connect(client.network.endpoints.rpc));
   try {
     assert.equal(await transport.getChainId(), chainId);
     const { account: auth } = await getJson('/cosmos/auth/v1beta1/accounts/' + account.cosmos);
@@ -55,7 +81,8 @@ export async function broadcast(account, messages, name, { mode = 'hybrid', regi
       sequence: BigInt(base.sequence),
       fee: { amount: [{ denom: 'uqor', amount: String(270000 * n) }], gas: String(1800000 * n) },
     });
-    const out = { step: name, hash: tx.transactionHash, height: tx.height, code: tx.code, sender: account.cosmos, at: now() };
+    const out = { step: name, hash: tx.transactionHash, height: tx.height, code: tx.code, sender: account.cosmos, at: now(),
+      handedAt: transport.handedAt };
     console.log(out);
     if (tx.code !== 0) throw Object.assign(new Error('Transaction failed with code ' + tx.code), { tx: out });
     return out;

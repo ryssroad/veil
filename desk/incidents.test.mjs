@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TimeoutError, BroadcastTxError } from '@cosmjs/stargate';
 import { createIncidentTracker } from './incidents.mjs';
-import { challenge, broadcastFailure } from './chain.mjs';
+import { challenge, broadcastFailure, quickInclusion } from './chain.mjs';
 
 const WINDOW = 3600;
 const forged = (over = {}) => ({ index: 2, status: 'submitted', start: 4, end: 5, stateRoot: 'ab'.repeat(32), verdict: 'diverged',
@@ -323,4 +323,29 @@ test('without any height read nothing is linked, and every verdict stays visible
   list = await h.step(8000, view(forged(b)), false, 107);
   assert.deepEqual(shape(list), [[105, 'submitted', null], [100, 'rejected', HA]]);
   once(list, HA);
+});
+
+// ------------------------------------------------- run 1 on Diana (PR 14)
+
+test('inclusion is looked up at once and then on a short poll, not after a fixed 3 s', async () => {
+  let clock = 1000;
+  const sleeps = [];
+  const lookups = [];
+  const found = { code: 0, height: 10458203, txIndex: 0, events: [], rawLog: '', msgResponses: [], gasUsed: 1n, gasWanted: 2n };
+  const transport = quickInclusion({
+    broadcastTxSync: async (tx) => { assert.deepEqual([...tx], [1, 2, 3]); clock += 20; return 'AB'.repeat(32); },
+    getTx: async (id) => { lookups.push([id, clock]); return lookups.length < 3 ? null : found; },
+  }, { pollMs: 400, now: () => clock, sleep: async (ms) => { sleeps.push(ms); clock += ms; } });
+  const res = await transport.broadcastTx(Uint8Array.of(1, 2, 3));
+  assert.equal(transport.handedAt, 1020, 'the moment the node accepted it');
+  assert.deepEqual(lookups.map(([, at]) => at - 1020), [0, 400, 800], 'first lookup with no wait');
+  assert.deepEqual(sleeps, [400, 400]);
+  assert.deepEqual([res.transactionHash, res.code, res.height], ['AB'.repeat(32), 0, 10458203]);
+
+  // Never found: the timeout carries the hash, so a challenge is reconciled instead of resent.
+  const lost = quickInclusion({ broadcastTxSync: async () => 'CD'.repeat(32), getTx: async () => null },
+    { pollMs: 400, now: () => clock, sleep: async (ms) => { clock += ms; } });
+  const err = await lost.broadcastTx(Uint8Array.of(1), 2000).catch((e) => e);
+  assert.ok(err instanceof TimeoutError);
+  assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], ['CD'.repeat(32), null]);
 });

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { depositToRollupMsg } from '@qorechain/rdk';
 import { rollupId, chainId } from '../veil.mjs';
 import { client, operator, broadcast, pay, submitBatch } from './chain.mjs';
-import { auditorAddress, snapshot, notePayment, measuring, watching, finalityReport } from './state.mjs';
+import { auditorAddress, snapshot, beginPayment, notePayment, measuring, settling, watching, finalityReport } from './state.mjs';
 import { invoicesCsv, parseQor, startPolling } from './model.mjs';
 
 process.chdir(fileURLToPath(new URL('../', import.meta.url)));
@@ -65,8 +65,12 @@ async function action(body, clickAt) {
   const op = await operator(process.env.VEIL_OPERATOR_MNEMONIC, roll);
   let tx;
   if (body.action === 'pay') {
-    tx = await pay(op, body.payee, auditorAddress, amount, body.description);
-    notePayment(tx.hash, clickAt, tx.height);
+    // The readers read every block from the click, independently of this broadcast.
+    const end = beginPayment();
+    try {
+      tx = await pay(op, body.payee, auditorAddress, amount, body.description);
+      notePayment(tx.hash, clickAt, tx.height, tx.handedAt);
+    } finally { end(); }
   }
   if (body.action === 'batch') tx = await submitBatch(op, roll);
   if (body.action === 'top-up') {
@@ -138,5 +142,5 @@ createServer(async (req, res) => {
 }).listen(8788, '127.0.0.1', () => {
   console.log('Veil Desk at ' + origin + (session ? ' · recording ' + session : ''));
   if (watching) console.log('Watcher account configured: polling Diana and challenging divergent batches while this server runs.');
-  startPolling({ read: () => state().catch(() => {}), measuring, watching, recording: Boolean(session) }).unref();
+  startPolling({ read: () => state().catch(() => {}), measuring, settling, watching, recording: Boolean(session) }).unref();
 });
