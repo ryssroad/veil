@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { depositToRollupMsg } from '@qorechain/rdk';
 import { rollupId, chainId } from '../veil.mjs';
 import { client, operator, broadcast, pay, submitBatch } from './chain.mjs';
-import { auditorAddress, snapshot } from './state.mjs';
-import { invoicesCsv, parseQor } from './model.mjs';
+import { auditorAddress, snapshot, notePayment, measuring, watching, finalityReport } from './state.mjs';
+import { invoicesCsv, parseQor, startPolling } from './model.mjs';
 
 process.chdir(fileURLToPath(new URL('../', import.meta.url)));
 const address = '127.0.0.1:8788';
@@ -29,19 +29,21 @@ if (session) {
 }
 let busy = null, loading, lastRecord, cached, lastRead = 0;
 async function state() {
-  if (!cached || Date.now() - lastRead > 2400) {
+  // While a Desk payment is being measured, read Diana about once per block.
+  if (!cached || Date.now() - lastRead > (measuring() ? 900 : 2400)) {
     loading ??= snapshot().then(s => { cached = s; lastRead = Date.now(); }).finally(() => { loading = undefined; });
     await loading;
   }
   const result = { ...cached, busy, recording: Boolean(session) };
   if (session) {
-    const serial = encode(result);
+    // The watcher's heartbeat alone is not a new scene.
+    const serial = encode({ ...result, watch: { ...result.watch, checkedAt: 0 } });
     if (serial !== lastRecord) { record('state', { state: result }); lastRecord = serial; }
   }
   return result;
 }
 class InputError extends Error {}
-async function action(body) {
+async function action(body, clickAt) {
   if (body.action === 'mark') {
     if (!session || typeof body.label !== 'string' || !body.label.trim() || body.label.length > 100) throw new InputError('Enter a scene label (1–100 characters).');
     record('mark', { label: body.label.trim() });
@@ -62,7 +64,10 @@ async function action(body) {
   const roll = await client.rest.getRollup(rollupId);
   const op = await operator(process.env.VEIL_OPERATOR_MNEMONIC, roll);
   let tx;
-  if (body.action === 'pay') tx = await pay(op, body.payee, auditorAddress, amount, body.description);
+  if (body.action === 'pay') {
+    tx = await pay(op, body.payee, auditorAddress, amount, body.description);
+    notePayment(tx.hash, clickAt, tx.height);
+  }
   if (body.action === 'batch') tx = await submitBatch(op, roll);
   if (body.action === 'top-up') {
     const s = await state();
@@ -104,16 +109,21 @@ createServer(async (req, res) => {
       res.setHeader('Content-Disposition', 'attachment; filename="veil-invoices.csv"');
       return send(200, invoicesCsv(s.auditor.rows, url.searchParams.get('batch')), 'text/csv; charset=utf-8');
     }
+    if (req.method === 'GET' && url.pathname === '/api/finality.json') {
+      await state();
+      return send(200, await finalityReport());
+    }
     if (req.method !== 'POST' || url.pathname !== '/api/action') return send(404, { error: 'Unknown route.' });
     if (req.headers['x-veil'] !== '1' || req.headers['content-type']?.split(';')[0] !== 'application/json') return send(403, { error: 'Expected a Desk JSON action.' });
     if (busy) return send(409, { error: 'An action is in progress.' });
+    const clickAt = Date.now();
     const body = await readBody(req);
     if (busy) return send(409, { error: 'An action is in progress.' });
     if (!['pay', 'top-up', 'batch', 'mark'].includes(body.action)) throw new InputError('Unknown action.');
     busy = body.action;
     record('action-start', { action: busy });
     try {
-      const result = await action(body);
+      const result = await action(body, clickAt);
       record('action-end', { action: busy, result });
       send(200, result);
     } catch (err) {
@@ -127,9 +137,6 @@ createServer(async (req, res) => {
   }
 }).listen(8788, '127.0.0.1', () => {
   console.log('Veil Desk at ' + origin + (session ? ' · recording ' + session : ''));
-  if (session) {
-    const poll = () => state().catch(() => {});
-    void poll();
-    setInterval(poll, 3000).unref();
-  }
+  if (watching) console.log('Watcher account configured: polling Diana and challenging divergent batches while this server runs.');
+  startPolling({ read: () => state().catch(() => {}), measuring, watching, recording: Boolean(session) }).unref();
 });
