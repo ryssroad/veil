@@ -61,10 +61,12 @@ function reader(t, p, entries) {
   const dir = mkdtempSync(join(tmpdir(), 'veil-finality-'));
   t.after(() => rmSync(dir, { recursive: true }));
   const { executions } = replayExecutions(entries);
-  return (all, receipt = { valid: true, checks: { batchStateRoot: true } }) => readInvoices({
+  const read = (all, receipt = { valid: true, checks: { batchStateRoot: true } }) => readInvoices({
     dir, entries, all, executions, mine: hex(p.payee.accountId), sealKeys: p.payeeSeal,
     auditorKey: kemFingerprint(p.auditorSeal.mlkemPublicKey), receiptFor: () => receipt,
   });
+  read.imports = () => JSON.parse(readFileSync(join(dir, 'imports.json'), 'utf8'));
+  return read;
 }
 
 // ----------------------------------------------------- same-transaction binding
@@ -165,6 +167,37 @@ test('a divergent pending ancestor disputes later entries, even when it ends bef
   const honest = await read([batchOver(entries, 0, 0, 1)]);
   assert.equal(honest.rows[0].status, 'determined');
   assert.equal(honest.rows[0].batch, undefined);
+});
+
+test('rule 6 before determination: a second executed transfer that reuses an invoice id is never determined', async (t) => {
+  const p = parties();
+  const id = 'd'.repeat(32);
+  const a = invoice(p, { nonce: 0, id });
+  const b = invoice(p, { nonce: 1, id });
+  const entries = [deposit(p.payer.accountId, 20n, 1), ...coPost(a.transfer, a.envelope, 2, 5n, 7), ...coPost(b.transfer, b.envelope, 4, 6n, 8)];
+  const { executions } = replayExecutions(entries);
+  assert.deepEqual(executions.map((x) => x.executed), [true, true], 'both transfers moved funds');
+  const read = reader(t, p, entries);
+  const statuses = (r) => r.rows.map((x) => x.status);
+  // Both pending: the conflict is with an earlier invoice of this replay, and nothing is persisted.
+  let r = await read([]);
+  assert.deepEqual(statuses(r), ['determined', 'conflict']);
+  assert.deepEqual(read.imports(), { payments: {}, invoices: {}, conflicts: [] });
+  // In a divergent pending batch it is still a conflict, not a dispute to wait out.
+  r = await read([batchOver(entries, 0, 0, 5, { forge: 'ab'.repeat(32) })]);
+  assert.deepEqual(statuses(r), ['disputed', 'conflict']);
+  // The first settled: the conflict is now with a persisted association; the pending one stays out of the import.
+  const first = batchOver(entries, 0, 0, 3, { status: 'finalized' });
+  r = await read([first]);
+  assert.deepEqual(statuses(r), ['settled', 'conflict']);
+  assert.equal(Object.keys(read.imports().payments).length, 1);
+  assert.equal(read.imports().conflicts.length, 0);
+  assert.equal(invoicesCsv(r.rows).trimEnd().split('\r\n').length, 2);
+  // Both settled: the same verdict, now recorded by the importer as before.
+  r = await read([first, batchOver(entries, 1, 3, 5, { status: 'finalized' })]);
+  assert.deepEqual(statuses(r), ['settled', 'conflict']);
+  assert.equal(read.imports().conflicts.length, 1);
+  assert.equal(invoicesCsv(r.rows).trimEnd().split('\r\n').length, 2);
 });
 
 // ------------------------------------------------- invoice lifecycle fixture

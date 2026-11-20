@@ -3,24 +3,38 @@ import { join } from 'node:path';
 import { qledgerKeypairFromSeed } from '@qorechain/rdk';
 import { sealKeysFromSeed } from '@qorechain/qoreseal';
 import { rollupId, hex, discoverReaderKeys, replayExecutions, kemFingerprint } from '../veil.mjs';
-import { watchBatches, incidentsFrom, PENDING } from '../finality.mjs';
+import { watchBatches, PENDING } from '../finality.mjs';
 import { client, getJson, inboxEntries, batches, payeeKeys, registryKey, verifyBatch, readInvoices,
-  challengeOutcomes, challenge, mnemonicAccount } from './chain.mjs';
-import { classifyEntry } from './model.mjs';
+  challengeOutcomes, challenge, txResult, mnemonicAccount } from './chain.mjs';
+import { batchDeadline, classifyEntry } from './model.mjs';
+import { createIncidentTracker } from './incidents.mjs';
 
 export const auditorAddress = process.env.VEIL_AUDITOR || 'qor1kc6lwdz77q6f32vcfae35yu3k84l58t5xrsy3l';
 const payeeDir = process.env.VEIL_PAYEE_DIR || '.private/clients/payee';
 const auditorDir = process.env.VEIL_AUDITOR_DIR || '.private/clients/auditor';
 const watcherFile = process.env.VEIL_WATCHER_MNEMONIC;
+export const watching = Boolean(watcherFile);
 const times = new Map();
-let lastKey, lastState, lastBatches, keys, watcher, outcomes, outcomesKey;
+let lastKey, lastState, lastBatches, lastWatch, keys, watcher, creator;
 
 // Wall-clock observations for the finality measurement (#12).
 const clicks = new Map();      // tx hash -> { clickAt, sentAt, height }
-const observed = new Map();    // `${reader}:${sequence}:${status}` -> first ms this reader produced it
-const incidents = new Map();   // `${index}:${stateRoot}` -> divergence record
+const observed = new Map();    // `${reader}:${tx hash}:${status}` -> first ms this reader produced it
 
-/** Called by the server when a Desk payment is clicked and when it is committed. */
+/** Chain access the incident tracker uses; tests replace these. */
+export const deps = { challenge, txResult, challengeOutcomes, now: () => Date.now() };
+const tracker = createIncidentTracker({
+  send: watching ? async (index, proofHex) => {
+    watcher ??= await mnemonicAccount(watcherFile);
+    if (watcher.cosmos === creator) return { fatal: 'the watcher must not be the rollup creator' };
+    return deps.challenge(watcher, index, proofHex);
+  } : null,
+  lookupTx: hash => deps.txResult(hash),
+  fetchOutcomes: minHeight => deps.challengeOutcomes(minHeight),
+  now: () => deps.now(),
+});
+
+/** Called by the server when a Desk payment's broadcast returns. The readers may already have seen it. */
 export function notePayment(hash, clickAt, height) {
   clicks.set(hash, { clickAt, sentAt: Date.now(), height: String(height) });
 }
@@ -41,53 +55,33 @@ async function blockTime(height) {
   }
   return times.get(height);
 }
+const reached = { determined: r => r.status === 'determined' || r.status === 'settled', settled: r => r.status === 'settled' };
+/**
+ * Record the first time each reader produced each status, by transaction hash,
+ * whether or not the Pay click is registered yet: a poll can see the committed
+ * payment before its broadcast returns.
+ */
 async function withTimes(rows, reader) {
   const now = Date.now();
   for (const row of rows) {
     row.time = await blockTime(row.height);
     for (const status of ['determined', 'settled']) {
-      const reached = status === 'determined' ? ['determined', 'settled'].includes(row.status) : row.status === 'settled';
-      const key = `${reader}:${row.sequence}:${status}`;
-      if (reached && !observed.has(key)) observed.set(key, now);
-      // A Desk payment is measured by its tx hash as well, for the export.
-      if (reached && clicks.has(row.tx) && !observed.has(`${reader}:${row.tx}:${status}`)) observed.set(`${reader}:${row.tx}:${status}`, now);
+      const key = `${reader}:${row.tx}:${status}`;
+      if (reached[status](row) && !observed.has(key)) observed.set(key, now);
     }
-    row.observed = { determined: observed.get(`${reader}:${row.sequence}:determined`) ?? null,
-      settled: observed.get(`${reader}:${row.sequence}:settled`) ?? null };
-    row.clickAt = clicks.get(row.tx)?.clickAt ?? null;
   }
   return rows.reverse();
 }
-
-/** Track every divergence through its window, and our challenge if we sent one. */
-async function trackIncidents(watch, windowSecs, roll) {
-  const now = Date.now();
-  const current = new Map(incidentsFrom(watch).map(i => [i.key, i]));
-  for (const [key, i] of current) {
-    const known = incidents.get(key);
-    incidents.set(key, { ...known, ...i, firstSeen: known?.firstSeen ?? now,
-      deadline: i.submittedTime ? i.submittedTime + windowSecs : null });
-  }
-  for (const [key, i] of incidents) {
-    if (!current.has(key) && PENDING.has(i.status)) incidents.set(key, { ...i, status: 'replaced or rejected', closedAt: now });
-  }
-  if (watcherFile) {
-    for (const v of watch.verdicts) {
-      const key = `${v.index}:${v.stateRoot}`;
-      const i = incidents.get(key);
-      if (v.verdict !== 'diverged' || v.status !== 'submitted' || !i || i.ours) continue;
-      watcher ??= await mnemonicAccount(watcherFile);
-      if (watcher.cosmos === roll.creator) { i.ours = { error: 'watcher must not be the rollup creator' }; continue; }
-      i.ours = { pending: true };
-      i.ours = await challenge(watcher, v.index, v.proofHex);
+/** Join the observations and the click to the rows. Runs on every read, changed or not. */
+function decorate(state) {
+  for (const reader of ['payee', 'auditor']) {
+    for (const row of state[reader].rows) {
+      row.observed = { determined: observed.get(`${reader}:${row.tx}:determined`) ?? null,
+        settled: observed.get(`${reader}:${row.tx}:settled`) ?? null };
+      row.clickAt = clicks.get(row.tx)?.clickAt ?? null;
     }
   }
-  // The chain's own verdict, whoever won the race.
-  const key = JSON.stringify([...incidents.values()].map(i => [i.key, i.status]));
-  if (!outcomes || key !== outcomesKey) { outcomes = await challengeOutcomes(); outcomesKey = key; }
-  const list = [...incidents.values()].map(i => ({ ...i, upheld: outcomes.find(o => o.index === i.index && o.height >= (i.submittedAt ?? 0)) ?? null }));
-  const past = outcomes.filter(o => !list.some(i => i.upheld?.hash === o.hash)).map(o => ({ index: o.index, status: 'rejected', verdict: 'diverged', upheld: o }));
-  return [...list, ...past].sort((a, b) => b.index - a.index || (b.upheld?.height ?? 0) - (a.upheld?.height ?? 0));
+  return state;
 }
 
 export async function snapshot() {
@@ -96,6 +90,7 @@ export async function snapshot() {
     client.rest.getRollup(rollupId), client.rest.getInbox(rollupId),
     client.rest.getLatestBatch(rollupId), registryKey(auditorAddress),
   ]);
+  creator = roll.creator;
   const bond = await client.rest.getSubmitterBond(rollupId, roll.creator);
   const auditorKey = registered && kemFingerprint(registered.key);
   let all;
@@ -113,8 +108,10 @@ export async function snapshot() {
   const key = JSON.stringify([inbox, all, bond, auditorKey, roll.challengeWindowSec]);
   if (lastKey === key) {
     // Nothing moved: the last check still holds, and the watcher is current.
+    // Challenge retries and third-party verdicts still advance.
     lastState.watch.checkedAt = Date.now();
-    return lastState;
+    lastState.incidents = await tracker.update({ watch: lastWatch, windowSecs: lastState.windowSecs, changed: false });
+    return decorate(lastState);
   }
   const { entries } = await inboxEntries(inbox);
   const windowSecs = roll.challengeWindowSec ?? (await client.rest.getParams()).defaultChallengeWindow;
@@ -123,8 +120,7 @@ export async function snapshot() {
   const batchList = all.map(b => ({ index: b.batchIndex, status: b.status, start: b.inboxStart, end: b.inboxEnd,
     height: b.status === 'finalized' ? b.finalizedAt : b.submittedAt, submittedAt: b.submittedAt,
     submittedTime: b.submittedTime ?? null, finalizedAt: b.finalizedAt || null, verdict: verdictOf(b.batchIndex)?.verdict,
-    deadline: b.submittedTime ? b.submittedTime + windowSecs : null,
-    deadlineHeight: b.submittedTime ? null : b.submittedAt + Math.floor(windowSecs / 1.427) }));
+    ...batchDeadline(b, windowSecs) }));
   const { bindings, events } = discoverReaderKeys(entries);
   const { ledger, executions, withdrawals } = replayExecutions(entries);
   const paymentsBySequence = new Map([...executions, ...withdrawals].map(tx => [tx.sequence, tx]));
@@ -153,16 +149,17 @@ export async function snapshot() {
     bond: String(bond.amount), batches: batchList, windowSecs,
     watch: { checkedAt: Date.now(), pending: pending.length, diverged: pending.filter(v => v.verdict !== 'ok').map(v => v.index),
       fault: watch.fault?.index ?? null, challenging: Boolean(watcherFile) },
-    incidents: await trackIncidents(watch, windowSecs, roll),
+    incidents: await tracker.update({ watch, windowSecs, changed: true }),
     entries: entries.map(e => ({ sequence: e.sequence, height: String(e.height), poster: e.poster, tx: e.tx.hash,
       batch: batchList.find(b => b.status !== 'rejected' && b.start < e.sequence && e.sequence <= b.end)?.index,
       ...classifyEntry(e, paymentsBySequence.get(e.sequence), events.find(x => x.sequence === e.sequence)) })).reverse(),
     payee: { ...payee, account: id.payeeId, fingerprint: bound?.fingerprint, ownKey, sequence: bound?.sequence },
     auditor: { ...auditor, address: auditorAddress, fingerprint: auditorKey } };
   lastBatches = all;
+  lastWatch = watch;
   lastState = state;
   lastKey = key;
-  return state;
+  return decorate(state);
 }
 
 /**

@@ -348,6 +348,10 @@ export class InvoiceImporter {
   constructor(state = { payments: {}, invoices: {}, conflicts: [] }) {
     this.state = state;
   }
+  /** What `import` would return for this record ('imported', 'duplicate' or 'conflict'), recording nothing. */
+  check(record) {
+    return new InvoiceImporter(structuredClone(this.state)).import(record).result;
+  }
   import(record) {
     const base = `${chainId}/${rollupId}/${record.payer}`;
     const paymentKey = `${base}/${record.nonce}`;

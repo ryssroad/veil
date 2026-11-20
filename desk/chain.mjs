@@ -170,6 +170,9 @@ export async function verifyBatch(batch) {
 /**
  * The reader. Per invoice, in order of strength:
  *  - `no-op`: the transfer bytes are in the inbox but did not execute;
+ *  - `conflict`: rule 6 fails. The payment or the invoice id is already bound
+ *    to another transfer, in the reader's imports or earlier in this replay.
+ *    Checked before any other status, so a reused id is never `determined`;
  *  - `disputed`: a pending batch the entry depends on, or a finalized one,
  *    diverges from the replay;
  *  - `determined`: executed, co-posted in one successful L1 transaction, opened,
@@ -184,6 +187,9 @@ export async function readInvoices({ dir, mine, sealKeys, auditorKey, entries, a
   const batchOf = seq => live.find(b => b.inboxStart < seq && seq <= b.inboxEnd);
   const storePath = join(dir, 'imports.json');
   const importer = new InvoiceImporter(existsSync(storePath) ? JSON.parse(readFileSync(storePath)) : undefined);
+  // Rule 6 over this replay: the imports plus every executed invoice seen so far,
+  // settled or not. Nothing here is persisted.
+  const replayed = new InvoiceImporter(structuredClone(importer.state));
   const accepted = [];
   const skipped = [];
   const rows = [];
@@ -211,6 +217,13 @@ export async function readInvoices({ dir, mine, sealKeys, auditorKey, entries, a
       skipped.push({ sequence: x.sequence, invoiceId: opened.invoice.id, reason });
     };
     if (!x.executed) { hold('no-op', 'transfer bytes did not execute'); continue; }
+    const record = { ...opened, nonce: x.nonce };
+    const settling = !disputed && batch?.status === 'finalized';
+    // A conflict with the imports is recorded at settlement, below, as before.
+    if (replayed.import(record).result === 'conflict' && !(settling && importer.check(record) === 'conflict')) {
+      hold('conflict', 'the payment or invoice id is already bound to another transfer');
+      continue;
+    }
     if (disputed) { hold('disputed', disputed.reason, { disputedBatch: disputed.batch }); continue; }
     if (batch?.status !== 'finalized') {
       hold('determined', batch ? `batch ${batch.batchIndex} is ${batch.status}` : 'not in a batch yet');
@@ -218,7 +231,7 @@ export async function readInvoices({ dir, mine, sealKeys, auditorKey, entries, a
     }
     const verified = await receiptFor(batch);
     if (!verified.valid) { hold('unverified', 'receipt: ' + verified.reason); continue; }
-    const imported = importer.import({ ...opened, nonce: x.nonce });
+    const imported = importer.import(record);
     rows.push({ ...row, status: imported.result === 'conflict' ? 'conflict' : 'settled',
       settledHeight: batch.finalizedAt, receiptChecks: verified.checks, import: imported.result });
     accepted.push({ sequence: x.sequence, envelopeSequence: envelopeEntry.sequence, batch: batch.batchIndex,
@@ -235,9 +248,9 @@ export async function readInvoices({ dir, mine, sealKeys, auditorKey, entries, a
   return { accepted, skipped, rows, conflicts: importer.state.conflicts, watch };
 }
 
-/** Every upheld fraud challenge on this rollup, from the chain's own events. */
-export async function challengeOutcomes() {
-  const txs = await client.rest.searchTxs(`rdk_fraud_upheld.rollup_id='${rollupId}'`);
+/** Upheld fraud challenges on this rollup at or after `minHeight`, from the chain's own events. */
+export async function challengeOutcomes(minHeight = 0) {
+  const txs = await client.rest.searchTxs(`rdk_fraud_upheld.rollup_id='${rollupId}'` + (minHeight ? ` AND tx.height>=${minHeight}` : ''));
   const out = [];
   for (const tx of txs) {
     for (const ev of tx.events ?? []) {
@@ -251,15 +264,32 @@ export async function challengeOutcomes() {
   return out;
 }
 
-/** Submit a fraud challenge from the reader's watcher account. A lost race is a result, not an error. */
+/** The result of an included transaction, or null when the node does not know the hash. */
+export async function txResult(hash) {
+  try {
+    const { tx_response: r } = await client.rest.getTx(hash);
+    return { code: Number(r.code), height: Number(r.height) };
+  } catch (err) {
+    if (isRestNotFound(err)) return null;
+    throw err;
+  }
+}
+
+/**
+ * Submit a fraud challenge from the reader's watcher account. Returns the hash
+ * and code when the node reported them; `code: null` means the outcome is
+ * unknown (a transport failure, or a broadcast that did not confirm).
+ */
 export async function challenge(watcher, batchIndex, proofHex) {
   try {
-    return await broadcast(watcher, [challengeBatchMsg({ challenger: watcher.cosmos, rollupId, batchIndex,
+    const tx = await broadcast(watcher, [challengeBatchMsg({ challenger: watcher.cosmos, rollupId, batchIndex,
       proof: Buffer.from(proofHex, 'hex') })], 'challenge');
+    return { hash: tx.hash, code: tx.code, height: tx.height };
   } catch (err) {
-    if (err.tx) return err.tx;
+    if (err.tx) return { hash: err.tx.hash, code: err.tx.code, height: err.tx.height };
     const message = String(err?.message ?? err);
-    return { step: 'challenge', hash: message.match(/\(tx ([0-9A-F]{64})\)/)?.[1], code: Number(message.match(/code (\d+)/)?.[1]) || -1,
-      error: message.slice(0, 300), at: now() };
+    const code = message.match(/code (\d+)/)?.[1];
+    return { hash: message.match(/\(tx ([0-9A-F]{64})\)/)?.[1] ?? null, code: code === undefined ? null : Number(code),
+      error: message.slice(0, 300) };
   }
 }

@@ -76,7 +76,7 @@ The reader reports three states for each invoice:
 | **settled** | Also rule 5: the batch is finalized and its ML-DSA-87 receipt verifies. Only settled invoices are imported and exported to CSV |
 | **disputed** | A pending batch the entry depends on diverges from the replay, including an earlier batch that ends before the entry, or a finalized batch diverges. The watcher holds the replay result and tracks the chain's decision |
 
-**The condition.** The guarantee needs one honest watcher during each window, ours or anyone's. An unchallenged divergent batch would finalize on L1, and withdrawals would follow it. Desk shows when the watcher falls behind (`unwatched`). With `VEIL_WATCHER_MNEMONIC` set, it challenges a divergent batch from that account. Either way, it records the chain's verdict, including a race won by a third-party watcher, as on 18 Nov.
+**The condition.** The guarantee needs one honest watcher during each window, ours or anyone's. An unchallenged divergent batch would finalize on L1, and withdrawals would follow it. Desk shows when the watcher falls behind (`unwatched`). With `VEIL_WATCHER_MNEMONIC` set, the Desk server polls Diana for as long as it runs, with or without a browser, and challenges a divergent batch from that account. It retries delivery until the chain decides or the window closes. Either way, it records the chain's verdict, including a race won by a third-party watcher, as on 18 Nov.
 
 The watcher reproduces Diana's verdict on the real batch 2: it flags the forgery with a fraud proof byte-identical to the one the chain upheld (sha256 `ef5f485b…b28c`), then accepts the honest replacement (`finality.test.mjs`). The live click-to-reader measurement is pending ([#12](https://github.com/ryssroad/veil/issues/12)).
 

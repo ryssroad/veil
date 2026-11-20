@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { encodeQledgerDeposit, qledgerKeypairFromSeed } from '@qorechain/rdk';
 import { seal, sealKeysFromSeed } from '@qorechain/qoreseal';
-import { classifyEntry, invoicesCsv, parseQor } from './model.mjs';
+import { batchDeadline, classifyEntry, invoicesCsv, parseQor, startPolling } from './model.mjs';
 import { readInvoices } from './chain.mjs';
 import { chainId, createInvoicePayment, kemFingerprint, replayExecutions } from '../veil.mjs';
 
@@ -98,4 +98,25 @@ test('reader keeps the invoice visible through finality and imports only a valid
   assert.equal(settled.status, 'settled');
   assert.equal(settled.import, 'imported');
   assert.equal((await scan(true)).rows[0].import, 'duplicate');
+});
+
+test('a batch without a submission time closes floor(window / 6) blocks after submission, as the chain rules', () => {
+  assert.deepEqual(batchDeadline({ submittedAt: 10303842 }, 3600), { deadline: null, deadlineHeight: 10303842 + 600 });
+  assert.deepEqual(batchDeadline({ submittedAt: 10303842, submittedTime: 0 }, 3605), { deadline: null, deadlineHeight: 10303842 + 600 });
+  assert.deepEqual(batchDeadline({ submittedAt: 10303842, submittedTime: 1794988312 }, 3600), { deadline: 1794988312 + 3600, deadlineHeight: null });
+});
+
+test('a configured watcher keeps the server reading Diana with no browser, recording or measurement', async () => {
+  const run = async (opts) => {
+    let reads = 0;
+    const timer = startPolling({ read: () => { reads += 1; }, measuring: () => false, watching: false, recording: false, everyMs: 2, ...opts });
+    await new Promise((r) => setTimeout(r, 80));
+    clearInterval(timer);
+    return reads;
+  };
+  assert.equal(await run({}), 0, 'an idle read-only Desk does not poll');
+  assert.ok(await run({ watching: true }) >= 3);
+  assert.ok(await run({ recording: true }) >= 3);
+  const measuring = await run({ measuring: () => true });
+  assert.ok(measuring > await run({ watching: true }), 'a payment being measured is read on every tick');
 });

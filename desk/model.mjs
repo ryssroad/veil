@@ -1,5 +1,5 @@
 import { parseEnvelope } from '@qorechain/qoreseal';
-import { decodeQledgerDeposit, QLEDGER_DEPOSIT_POSTER_PREFIX } from '@qorechain/rdk';
+import { batchChallengeWindow, decodeQledgerDeposit, QLEDGER_DEPOSIT_POSTER_PREFIX } from '@qorechain/rdk';
 import { chainId, rollupId, decodeReaderStatement, hex, sha256 } from '../veil.mjs';
 
 // For a rejected VRK1, display the claimed identity separately from verified bindings.
@@ -60,4 +60,28 @@ export function invoicesCsv(rows, batch) {
   return [['time', 'payer', 'payee', 'amount_uqor', 'description', 'batch', 'status', 'invoice_id'],
     ...data.map(r => [r.time, r.payer, r.invoice.beneficiary, r.invoice.amountUqor, r.invoice.description,
       r.batch, r.status, r.invoice.id])].map(row => row.map(escape).join(',')).join('\r\n') + '\r\n';
+}
+
+/**
+ * When a batch's challenge window closes, by the chain's own rule (RDK
+ * `batchChallengeWindow`): Unix seconds for a batch with a submission time, a
+ * block height (`floor(windowSecs / 6)` blocks) for one without.
+ */
+export function batchDeadline(batch, windowSecs) {
+  const w = batchChallengeWindow(batch, windowSecs, { height: batch.submittedAt, timeSecs: batch.submittedTime ?? 0 });
+  return { deadline: w.deadlineSecs ?? null, deadlineHeight: w.deadlineHeight ?? null };
+}
+
+/**
+ * The server's own reads of Diana, with no browser asking. A configured
+ * watcher polls for as long as the server runs: a challenge window can pass
+ * entirely while no tab is open. `read` must not throw.
+ */
+export function startPolling({ read, measuring, watching, recording, everyMs = 1000 }) {
+  let tick = 0;
+  if (watching || recording) void read();
+  return setInterval(() => {
+    tick += 1;
+    if (measuring() || ((watching || recording) && tick % 3 === 0)) void read();
+  }, everyMs);
 }

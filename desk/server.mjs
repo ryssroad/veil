@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { depositToRollupMsg } from '@qorechain/rdk';
 import { rollupId, chainId } from '../veil.mjs';
 import { client, operator, broadcast, pay, submitBatch } from './chain.mjs';
-import { auditorAddress, snapshot, notePayment, measuring, finalityReport } from './state.mjs';
-import { invoicesCsv, parseQor } from './model.mjs';
+import { auditorAddress, snapshot, notePayment, measuring, watching, finalityReport } from './state.mjs';
+import { invoicesCsv, parseQor, startPolling } from './model.mjs';
 
 process.chdir(fileURLToPath(new URL('../', import.meta.url)));
 const address = '127.0.0.1:8788';
@@ -137,8 +137,6 @@ createServer(async (req, res) => {
   }
 }).listen(8788, '127.0.0.1', () => {
   console.log('Veil Desk at ' + origin + (session ? ' · recording ' + session : ''));
-  const poll = () => state().catch(() => {});
-  if (session) void poll();
-  let tick = 0;
-  setInterval(() => { tick++; if (measuring() || (session && tick % 3 === 0)) void poll(); }, 1000).unref();
+  if (watching) console.log('Watcher account configured: polling Diana and challenging divergent batches while this server runs.');
+  startPolling({ read: () => state().catch(() => {}), measuring, watching, recording: Boolean(session) }).unref();
 });

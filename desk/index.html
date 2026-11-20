@@ -999,6 +999,22 @@
           return '<div class="small error">' + escapeHtml(r.reason) + ' · watcher holds the replay result until the chain decides</div>';
         return '<div class="small error">' + escapeHtml(r.reason || r.status) + '</div>';
       }
+      function ourChallenge(c) {
+        if (!c || c.state === 'idle') return '';
+        const what = {
+          included: 'upheld in our transaction',
+          sent: 'sent, awaiting inclusion',
+          retrying: 'attempt ' + c.attempts + ' did not land, retrying',
+          stopped: 'stopped: ' + (c.reason || ''),
+          expired: 'window closed before delivery',
+        }[c.state];
+        return (
+          '<br>Our challenge' +
+          (c.hash ? ' ' + short(c.hash) + (c.code == null ? '' : ' · code ' + escapeHtml(c.code)) : '') +
+          ' · ' +
+          escapeHtml(what)
+        );
+      }
       function renderIncidents(s) {
         if (!s.incidents?.length) return '';
         return (
@@ -1020,9 +1036,7 @@
                   ? '<br>Fraud upheld at H ' + i.upheld.height + ' by ' + short(i.upheld.challenger) + ' · <a target="_blank" rel="noreferrer" href="https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/' +
                     escapeHtml(i.upheld.hash) + '">' + short(i.upheld.hash) + '</a>'
                   : '') +
-                (i.ours?.hash
-                  ? '<br>Our challenge ' + short(i.ours.hash) + ' · code ' + escapeHtml(i.ours.code) + (i.ours.code === 0 ? '' : ' (lost or refused)')
-                  : i.ours?.error ? '<br>Our challenge: ' + escapeHtml(i.ours.error) : '') +
+                ourChallenge(i.ours) +
                 '</div>',
             )
             .join('') +

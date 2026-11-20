@@ -168,5 +168,5 @@ export function incidentsFrom(watch) {
   return watch.verdicts.filter((v) => v.verdict === 'diverged' || v.verdict === 'diverged-parent')
     .map((v) => ({ key: `${v.index}:${v.stateRoot}`, index: v.index, stateRoot: v.stateRoot, status: v.status,
       verdict: v.verdict, submittedAt: v.submittedAt, submittedTime: v.submittedTime, proofSha256: v.proofSha256,
-      expected: v.expected }));
+      proofHex: v.proofHex, expected: v.expected }));
 }
