@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url';
 import { depositToRollupMsg } from '@qorechain/rdk';
 import { rollupId, chainId } from '../veil.mjs';
-import { client, operator, broadcast, pay, submitBatch } from './chain.mjs';
+import { client, operator, broadcast, broadcastFailure, pay, submitBatch } from './chain.mjs';
 import { auditorAddress, snapshot, beginPayment, notePayment, measuring, settling, watching, finalityReport } from './state.mjs';
 import { invoicesCsv, parseQor, startPolling } from './model.mjs';
 
@@ -65,12 +65,8 @@ async function action(body, clickAt) {
   const op = await operator(process.env.VEIL_OPERATOR_MNEMONIC, roll);
   let tx;
   if (body.action === 'pay') {
-    // The readers read every block from the click, independently of this broadcast.
-    const end = beginPayment();
-    try {
-      tx = await pay(op, body.payee, auditorAddress, amount, body.description);
-      notePayment(tx.hash, clickAt, tx.height, tx.handedAt);
-    } finally { end(); }
+    tx = await pay(op, body.payee, auditorAddress, amount, body.description);
+    notePayment(tx.hash, clickAt, tx.height, tx.handedAt);
   }
   if (body.action === 'batch') tx = await submitBatch(op, roll);
   if (body.action === 'top-up') {
@@ -126,16 +122,20 @@ createServer(async (req, res) => {
     if (!['pay', 'top-up', 'batch', 'mark'].includes(body.action)) throw new InputError('Unknown action.');
     busy = body.action;
     record('action-start', { action: busy });
+    // The readers read every block from the moment Pay arrived, independently of the broadcast.
+    const endPayment = body.action === 'pay' ? beginPayment(clickAt) : () => {};
     try {
       const result = await action(body, clickAt);
       record('action-end', { action: busy, result });
       send(200, result);
     } catch (err) {
+      const failed = broadcastFailure(err);
       const result = err.tx ? { hash: err.tx.hash, code: err.tx.code, height: err.tx.height, error: 'Transaction rejected.' }
+        : failed.hash && failed.code == null ? { hash: failed.hash, error: 'Transaction submitted; its result is not known yet. Check the inbox before retrying.' }
         : { error: err instanceof InputError ? err.message : 'Action failed. Check the operator, payer balance and reader binding before retrying.' };
       record('action-end', { action: busy, result });
       send(err instanceof InputError ? 400 : 502, result);
-    } finally { busy = null; lastRead = 0; }
+    } finally { endPayment(); busy = null; lastRead = 0; }
   } catch (err) {
     send(err instanceof InputError ? 400 : 503, { error: err instanceof InputError ? err.message : 'Unable to read Diana or the local reader files. Retry to refresh.' });
   }

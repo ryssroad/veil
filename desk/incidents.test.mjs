@@ -349,3 +349,34 @@ test('inclusion is looked up at once and then on a short poll, not after a fixed
   assert.ok(err instanceof TimeoutError);
   assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], ['CD'.repeat(32), null]);
 });
+
+// ----------------------------------------------------- review of PR 15
+
+test('a lookup that fails after the node accepted the transaction does not lose its hash', async () => {
+  const H = 'EF'.repeat(32);
+  let accepted = 0;
+  let lookups = 0;
+  const transportFor = () => quickInclusion({
+    broadcastTxSync: async () => { accepted += 1; return H; },
+    getTx: async () => { lookups += 1; if (lookups === 1) throw new Error('HTTP 503'); return { code: 0, height: 103 }; },
+  }, { pollMs: 400, sleep: async () => {} });
+  // Through the real challenge adapter and the tracker: the first lookup fails, the second confirms.
+  const h = harness({
+    send: (n, index, proofHex) => challenge({ cosmos: 'qor1watcher' }, index, proofHex,
+      { send: async () => { const tx = await transportFor().broadcastTx(Uint8Array.of(1)); return { hash: tx.transactionHash, code: tx.code, height: tx.height }; } }),
+    lookupTx: () => assert.fail('the transport already confirmed it'),
+  });
+  const [i] = await h.step(0, view(forged()), true);
+  assert.deepEqual([i.ours.state, i.ours.hash, i.ours.code, i.ours.attempts], ['included', H, 0, 1]);
+  await h.step(60_000, view(forged()));
+  assert.deepEqual([accepted, lookups], [1, 2], 'sent exactly once');
+
+  // Every lookup fails until the timeout: the error still carries the hash, so the tracker reconciles instead of resending.
+  let clock = 0;
+  const down = quickInclusion({ broadcastTxSync: async () => H, getTx: async () => { throw new Error('HTTP 503'); } },
+    { pollMs: 400, now: () => clock, sleep: async (ms) => { clock += ms; } });
+  const err = await down.broadcastTx(Uint8Array.of(1), 2000).catch((e) => e);
+  assert.ok(err instanceof TimeoutError);
+  assert.match(err.message, /Last lookup error: HTTP 503/);
+  assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [H, null]);
+});

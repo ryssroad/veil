@@ -63,21 +63,66 @@ test('snapshot: determined, disputed while a forgery is pending, determined agai
 
   // The inbox was read once in full, never again while its head did not move.
   assert.equal(searches.filter((q) => q.startsWith('rdk_data_posted')).length, 1);
-  // 5. Finalized: settled for both readers. The receipt is verified once and reused on later reads.
+  // 5. Finalized. The first receipt check fails in transit: both readers are unverified, and on
+  // the same chain view the check is made again after a short wait, not left as it fell.
   let verifications = 0;
-  deps.verifyBatch = async (b) => { verifications += 1; return { valid: true, checks: { batchStateRoot: true }, batch: b.batchIndex }; };
+  let clock = Date.now();
+  deps.now = () => clock;
+  deps.verifyBatch = async (b) => {
+    verifications += 1;
+    return verifications === 1 ? { valid: false, reason: 'anchor lookup failed' } : { valid: true, checks: { batchStateRoot: true }, batch: b.batchIndex };
+  };
   view.set([b0, batch(1, 2, 4, { status: 'finalized', finalizedAt: 60 })], 4);
   s = await snapshot();
+  assert.deepEqual([s.payee.rows[0].status, s.auditor.rows[0].status], ['unverified', 'unverified']);
+  clock += 1000;
+  s = await snapshot();
+  assert.equal(verifications, 1, 'not on every read');
+  clock += 5000;
+  s = await snapshot();   // unchanged chain view
+  assert.equal(verifications, 2);
   assert.deepEqual([s.payee.rows[0].status, s.auditor.rows[0].status], ['settled', 'settled']);
   assert.equal(settling(), false);
+  // A pass is kept: later reads, changed or not, do not verify again.
+  clock += 60_000;
+  await snapshot();
   view.set([b0, batch(1, 2, 4, { status: 'finalized', finalizedAt: 60 }), batch(2, 4, 4)], 4);
   s = await snapshot();   // a new batch forces the rows to be rebuilt
   assert.equal(s.payee.rows[0].status, 'settled');
-  assert.equal(verifications, 1);
+  assert.equal(verifications, 2);
 
   report = await finalityReport();
   assert.equal(report.measurements[0].handedToNodeAt, clickAt + 1700);
   assert.equal(report.measurements[0].tx, PAY_TX);
   assert.equal(report.measurements[0].payee.determined, first.payee, 'later state changes do not move it');
   assert.equal(report.measurements[0].committed.height, '12');
+});
+
+test('per-tick reads start at the Pay click and end 60 s after it, whatever the broadcast does', async (t) => {
+  const { beginPayment, notePayment, measuring, deps } = await import('./state.mjs');
+  let clock = 5_000_000_000_000;
+  const real = deps.now;
+  deps.now = () => clock;
+  t.after(() => { deps.now = real; });
+  const clickAt = clock;
+  assert.equal(measuring(), false);
+  // Still in flight (a slow broadcast): the deadline holds anyway.
+  const end = beginPayment(clickAt);
+  assert.equal(measuring(), true);
+  clock = clickAt + 59_000;
+  assert.equal(measuring(), true);
+  clock = clickAt + 61_000;
+  assert.equal(measuring(), false, 'in flight for more than 60 s');
+  end();
+  // The broadcast returns 50 s after the click and no reader has determined the payment.
+  const next = clock = clickAt + 200_000;
+  const endNext = beginPayment(next);
+  clock = next + 50_000;
+  notePayment('9'.repeat(64), next, 12, next + 1700);
+  endNext();
+  assert.equal(measuring(), true);
+  clock = next + 59_000;
+  assert.equal(measuring(), true);
+  clock = next + 61_000;
+  assert.equal(measuring(), false, 'the count runs from the click, not from the broadcast\u2019s return');
 });

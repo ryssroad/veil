@@ -47,19 +47,26 @@ export const payeeKeys = (dir) => ({
  * Diana blocks. This looks at once and then every `pollMs`, and records when
  * the node accepted the transaction (`transport.handedAt`). The result and the
  * timeout error keep CosmJS's shape, so callers and `broadcastFailure` are unchanged.
+ *
+ * Once the node has accepted the transaction its hash is never lost: a lookup
+ * that fails is tried again, and the only error this can throw from then on is
+ * the timeout, which carries the hash.
  */
 export function quickInclusion(transport, { pollMs = 400, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   transport.broadcastTx = async (tx, timeoutMs = 60_000) => {
     const txId = await transport.broadcastTxSync(tx);
     transport.handedAt = now();
+    let lookupError;
     for (;;) {
-      const result = await transport.getTx(txId);
+      let result;
+      try { result = await transport.getTx(txId); } catch (err) { lookupError = err; }
       if (result) {
         return { code: result.code, height: result.height, txIndex: result.txIndex, events: result.events, rawLog: result.rawLog,
           transactionHash: txId, msgResponses: result.msgResponses, gasUsed: result.gasUsed, gasWanted: result.gasWanted };
       }
       if (now() - transport.handedAt >= timeoutMs) {
-        throw new TimeoutError(`Transaction with ID ${txId} was submitted but was not yet found on the chain. There was a wait of ${timeoutMs / 1000} seconds.`, txId);
+        throw new TimeoutError(`Transaction with ID ${txId} was submitted but was not yet found on the chain. There was a wait of ${timeoutMs / 1000} seconds.`
+          + (lookupError ? ` Last lookup error: ${String(lookupError?.message ?? lookupError).slice(0, 120)}` : ''), txId);
       }
       await sleep(pollMs);
     }
