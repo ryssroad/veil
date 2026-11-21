@@ -1,0 +1,90 @@
+{
+  "method": "Desk wall-clock observations are bracketed by Diana header timestamps. For observed requests and reader results, estimatedLastCommitted is headerAtOrBefore minus one: each sampled header carries the weighted precommit time of its predecessor. RPC availability and the precise instant of commit were not observed.",
+  "observations": {
+    "payRequest": {
+      "atMs": 1795214023910,
+      "headerAtOrBefore": 10458202,
+      "nextHeader": 10458203,
+      "estimatedLastCommitted": 10458201
+    },
+    "includingBlockHeader": {
+      "atMs": 1795214025160,
+      "headerAtOrBefore": 10458203,
+      "nextHeader": 10458204
+    },
+    "payeeDetermined": {
+      "atMs": 1795214029848,
+      "headerAtOrBefore": 10458206,
+      "nextHeader": 10458207,
+      "estimatedLastCommitted": 10458205
+    },
+    "auditorDetermined": {
+      "atMs": 1795214030021,
+      "headerAtOrBefore": 10458206,
+      "nextHeader": 10458207,
+      "estimatedLastCommitted": 10458205
+    }
+  },
+  "headers": [
+    {
+      "height": 10458199,
+      "time": "2026-11-20T22:33:39.283949324Z"
+    },
+    {
+      "height": 10458200,
+      "time": "2026-11-20T22:33:40.785362920Z"
+    },
+    {
+      "height": 10458201,
+      "time": "2026-11-20T22:33:42.223824889Z"
+    },
+    {
+      "height": 10458202,
+      "time": "2026-11-20T22:33:43.744020106Z"
+    },
+    {
+      "height": 10458203,
+      "time": "2026-11-20T22:33:45.160254031Z"
+    },
+    {
+      "height": 10458204,
+      "time": "2026-11-20T22:33:46.663248060Z"
+    },
+    {
+      "height": 10458205,
+      "time": "2026-11-20T22:33:48.088252050Z"
+    },
+    {
+      "height": 10458206,
+      "time": "2026-11-20T22:33:49.612913584Z"
+    },
+    {
+      "height": 10458207,
+      "time": "2026-11-20T22:33:51.023020025Z"
+    },
+    {
+      "height": 10458208,
+      "time": "2026-11-20T22:33:52.473756345Z"
+    },
+    {
+      "height": 10458209,
+      "time": "2026-11-20T22:33:53.841555464Z"
+    },
+    {
+      "height": 10458210,
+      "time": "2026-11-20T22:33:55.208230032Z"
+    }
+  ],
+  "precommitCheck": {
+    "headerHeights": [
+      10458202,
+      10458203,
+      10458204,
+      10458206,
+      10458207
+    ],
+    "result": "Each header time matched the voting-power-weighted median of the four last_commit signatures at height H-1 to nanosecond precision.",
+    "blockEndpoint": "https://api-testnet.qore.host/cosmos/base/tendermint/v1beta1/blocks/10458204",
+    "validatorSetEndpoint": "https://api-testnet.qore.host/cosmos/base/tendermint/v1beta1/validatorsets/10458203"
+  }
+}
