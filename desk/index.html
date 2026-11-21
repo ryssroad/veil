@@ -969,7 +969,8 @@
       function receipt(r, s) {
         const b = s.batches.find((b) => b.index === r.batch);
         const determined =
-          '<div class="small ok">Determined at H ' + escapeHtml(r.height) + ' · ' + at(r.time) + '</div>';
+          // The block fixes the outcome. Its header time precedes its commit; when a reader saw it is in `timing`.
+          '<div class="small ok">Determined by block ' + escapeHtml(r.height) + ' · header time ' + at(r.time) + '</div>';
         const status = effective(r);
         if (status === 'settled')
           return (

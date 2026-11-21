@@ -1,0 +1,62 @@
+{
+  "atMs": 1795272731183,
+  "batch": {
+    "index": 7,
+    "status": "finalized",
+    "start": 19,
+    "end": 21,
+    "height": 10499213,
+    "submittedAt": 10496699,
+    "submittedTime": 1795269103,
+    "finalizedAt": 10499213,
+    "verdict": "ok",
+    "deadline": 1795272703,
+    "deadlineHeight": null
+  },
+  "watch": {
+    "checkedAt": 1795272730682,
+    "pending": 0,
+    "diverged": [],
+    "fault": null,
+    "challenging": false
+  },
+  "payer": {
+    "account": "b28704147223f0f87fe15d21ddbfbd2f9555e71bdaa5fdf20f9001a67a52013b",
+    "balance": "1250000",
+    "nonce": "6"
+  },
+  "readers": {
+    "payee": {
+      "sequence": 20,
+      "status": "settled",
+      "receiptChecks": {
+        "rollupLayerBinding": true,
+        "batchStateRoot": true,
+        "anchorOnChain": true,
+        "creatorAuthority": true,
+        "pqcSignature": true,
+        "chainBinding": true
+      },
+      "observed": {
+        "determined": 1795269074248,
+        "settled": 1795272714726
+      }
+    },
+    "auditor": {
+      "sequence": 20,
+      "status": "settled",
+      "receiptChecks": {
+        "rollupLayerBinding": true,
+        "batchStateRoot": true,
+        "anchorOnChain": true,
+        "creatorAuthority": true,
+        "pqcSignature": true,
+        "chainBinding": true
+      },
+      "observed": {
+        "determined": 1795269074608,
+        "settled": 1795272714764
+      }
+    }
+  }
+}

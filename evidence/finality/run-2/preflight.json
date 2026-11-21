@@ -1,0 +1,28 @@
+{
+  "chainId": "qorechain-diana",
+  "rollupId": "veil-pay-1",
+  "at": "2026-11-21T13:50:20.514Z",
+  "height": "10496632",
+  "payer": {
+    "account": "b28704147223f0f87fe15d21ddbfbd2f9555e71bdaa5fdf20f9001a67a52013b",
+    "balance": "1550000",
+    "nonce": "5"
+  },
+  "payee": "12bd9a469e2e812f34f27c75a80b6b161c4cf352509c96be7fc5fc86d8ad915e",
+  "operator": "qor1a5j8wjpxpqc6f7htyv92042nrt7gaegpezdhx4",
+  "operatorBalanceUqor": "1977606970",
+  "operatorBondUqor": "1000000000",
+  "inbox": {
+    "head": 19,
+    "consumed": 19
+  },
+  "lastBatch": 6,
+  "windowSecs": 3600,
+  "watch": {
+    "checkedAt": 1795269013945,
+    "pending": 0,
+    "diverged": [],
+    "fault": null,
+    "challenging": false
+  }
+}

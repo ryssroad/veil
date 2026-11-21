@@ -1,0 +1,46 @@
+{
+  "atMs": 1795269146860,
+  "batch": {
+    "index": 7,
+    "status": "submitted",
+    "start": 19,
+    "end": 21,
+    "height": 10496699,
+    "submittedAt": 10496699,
+    "submittedTime": 1795269103,
+    "finalizedAt": null,
+    "verdict": "ok",
+    "deadline": 1795272703,
+    "deadlineHeight": null
+  },
+  "watch": {
+    "checkedAt": 1795269144064,
+    "pending": 1,
+    "diverged": [],
+    "fault": null,
+    "challenging": false
+  },
+  "payer": {
+    "account": "b28704147223f0f87fe15d21ddbfbd2f9555e71bdaa5fdf20f9001a67a52013b",
+    "balance": "1250000",
+    "nonce": "6"
+  },
+  "readers": {
+    "payee": {
+      "sequence": 20,
+      "status": "determined",
+      "observed": {
+        "determined": 1795269074248,
+        "settled": null
+      }
+    },
+    "auditor": {
+      "sequence": 20,
+      "status": "determined",
+      "observed": {
+        "determined": 1795269074608,
+        "settled": null
+      }
+    }
+  }
+}
