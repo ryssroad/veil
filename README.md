@@ -2,6 +2,8 @@
 
 **Private invoices for public payments on a QoreChain optimistic rollup.**
 
+**Video:** [3.5-minute walkthrough](https://youtu.be/6Jd2YcRKnyg): the fraud proof, a live sealed payment, and finality in seconds.
+
 **Demo:** [replay of a live Desk run on Diana](https://ryssroad.github.io/veil/demo/): a top-up, two sealed payments, a batch, its finalization and the auditor's register, replayed in the real Desk from a recorded session.
 
 **Finality replay:** [one payment on Diana, from Pay to its settled receipt](https://ryssroad.github.io/veil/demo/finality/). Both readers determined it about 6 s after Pay; L1 settled it an hour later.
