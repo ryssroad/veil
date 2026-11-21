@@ -1,5 +1,7 @@
 # Diana finality measurement, run 1
 
+Run 1 of two. [Run 2](./run-2/README.md) repeated it on 21 Nov, after PR #15.
+
 One 0.3 QOR Desk payment on `veil-pay-1` reached `determined` **5.938 s after Pay for the payee and 6.111 s for the auditor**. Desk evaluated the payee first and the auditor second in the same process. Their 173 ms gap includes that processing order. Both readers subsequently verified all six receipt checks and recorded `settled`. The measured software was merge commit `582e212e9de2de4951faa51d38f4a5143ab4bf9c` from PR #13.
 
 | Event | UTC on 2026-11-20 | Diana height | Elapsed from Desk receiving Pay |

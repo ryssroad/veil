@@ -4,6 +4,8 @@
 
 **Demo:** [replay of a live Desk run on Diana](https://ryssroad.github.io/veil/demo/): a top-up, two sealed payments, a batch, its finalization and the auditor's register, replayed in the real Desk from a recorded session.
 
+**Finality replay:** [one payment on Diana, from Pay to its settled receipt](https://ryssroad.github.io/veil/demo/finality/). Both readers determined it about 6 s after Pay; L1 settled it an hour later.
+
 Every payment needs two things: someone must enforce that only the owner can move the money, and someone must know what the money was for. Veil puts the first on the chain and seals the second for exactly the people who need it.
 
 - **The chain enforces authorization.** Payments are qledger-v1 transfers signed with ML-DSA-44. If a batch moves funds without the owner's signature, any watchtower can prove it, and Diana rejects the batch and slashes the operator's bond. We demonstrated this live: our operator submitted a batch that drained a payer without a signature, and it was rejected two blocks later with 1,000 QOR slashed.
@@ -25,6 +27,7 @@ Everything below ran on **QoreChain Diana** (testnet) on rollup [`veil-pay-1`](h
 | 6 | **Veil v1: reader-key discovery.** The payee published a signed reader-key statement to the inbox (entry 6). A substituted key claiming the payee's account (7) was rejected; a second statement (8) and a re-post of the first (9) were ignored. | [statement](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/83772A205B380782E33FBC4332D236C68F5482D8DBA7219A82CD7E2BD3F8ECFB) · [negatives](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/3A8AA293B3AD9E653F4DDAA46D329516D2F1766BF81F16FB9B19BE2E73D2ECEF) |
 | 7 | **Veil v1: auditor-declared invoice.** The auditor registered its ML-KEM-1024 key in the chain's KEM registry. The payer took the payee's key from the inbox and the auditor's from the registry, and paid 0.3 QOR with the invoice (6,013 B envelope). Batch 3 finalized at 10,336,020. Two clients in separate directories, sharing nothing but the chain, each accepted the same invoice with all receipt checks passing; a repeated import was a no-op duplicate. | [payment tx](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/0B913BF8042BD47C83410F4AFDB2B6571A4D754B4E0B3476B1FF9FEF848B6F31) · [batch 3](https://api-testnet.qore.host/qorechain/rdk/v1/batch/veil-pay-1/3) · [evidence](./evidence/v1/) |
 | 8 | **No censorship of third-party posts.** An outside account posted a probe to our inbox (entry 12). The operator's next batch (4) included it; it finalized at 10,345,225. | [batch 4](https://api-testnet.qore.host/qorechain/rdk/v1/batch/veil-pay-1/4) |
+| 9 | **Fast finality, measured twice.** A 0.3 QOR Desk payment was `determined` by the payee and the auditor about 6 s after Pay (5.9–6.5 s over two runs) and `settled` after the 1-hour window with all six receipt checks. Run 2: payment at 10,496,676, batch 7 finalized at 10,499,213. | [run 2 payment](https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/24A90F9FD2055125FD0126BC8B1F598103791F96660E641DCA5BF7294E5703A6) · [batch 7](https://api-testnet.qore.host/qorechain/rdk/v1/batch/veil-pay-1/7) · [run 1](./evidence/finality/README.md) · [run 2](./evidence/finality/run-2/README.md) |
 
 The roots of batches 0–1 are reproduced from the raw inbox bytes by two independent implementations: RDK in Node, and [a Python replay](./tools/replay_independent.py) that shares no code with it. The forged and honest roots of batch 2 and the commitments of batches 3–4 were recomputed the same way during review. The step-by-step reviews are in [issue #3](https://github.com/ryssroad/veil/issues/3), [#1](https://github.com/ryssroad/veil/issues/1) and [#2](https://github.com/ryssroad/veil/issues/2).
 
@@ -80,7 +83,17 @@ The reader reports three states for each invoice:
 
 The watcher reproduces Diana's verdict on the real batch 2: it flags the forgery with a fraud proof byte-identical to the one the chain upheld (sha256 `ef5f485b…b28c`), then accepts the honest replacement (`finality.test.mjs`).
 
-On Diana, run 1 reached `determined` **5.938 s after Desk received Pay for the payee and 6.111 s for the auditor**. One Desk process checked the two readers in that order. The estimated last committed height advanced **4 blocks** from Pay to determination, exceeding the 2–3 block target in issue #12. [Run 1 report](./evidence/finality/README.md)
+**Measured on Diana.** Two Desk payments of 0.3 QOR, timed from the moment Desk received Pay:
+
+| | Run 1, 20 Nov | Run 2, 21 Nov |
+|---|---:|---:|
+| Payee `determined` | 5.938 s | 6.148 s |
+| Auditor `determined` | 6.111 s | 6.508 s |
+| Payee `settled` | 1 h 0 min 34 s | 1 h 0 min 47 s |
+
+In Desk, a payment is determined about 6 s after Pay and settled about an hour later. The 2–3 block target set in issue #12 was not met: both runs took 4 to 5 blocks.
+
+Most of the 6 s is Desk, not the chain. In run 2 the node accepted the transaction 2.7 s after Pay, while Desk prepared and signed it. Its block was committed at about 3.6 s (estimated from block headers). Desk's readers showed `determined` 2.6 s (payee) and 2.9 s (auditor) after that. One Desk process evaluates the payee and then the auditor, so the two times are not independent. [Run 1](./evidence/finality/README.md) · [Run 2](./evidence/finality/run-2/README.md)
 
 **Limits of v1.**
 - `auditorKey` is the payer's signed *declaration*. A reader cannot prove that the second slot really opens for the auditor; confirmed auditor access would need an acknowledgement protocol.
@@ -154,10 +167,10 @@ Of the 15,000 test QOR allocated:
 - 1,000 is the active submitter bond;
 - 1,000 was slashed in the fraud demo;
 - 10 funded the watcher and auditor accounts;
-- 1 was the deposit (0.75 still in the pool, 0.25 withdrawn);
-- about 7 went to fees.
+- 3 were deposited to the payer (2.75 still in the pool, 0.25 withdrawn);
+- about 10 went to fees.
 
-The operator holds 1,982.33 QOR.
+The operator holds 1,976.70 QOR (21 Nov).
 
 ## Built with
 
