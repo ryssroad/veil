@@ -1,0 +1,31 @@
+{
+  "rollup": "veil-pay-1",
+  "measurements": [
+    {
+      "tx": "24A90F9FD2055125FD0126BC8B1F598103791F96660E641DCA5BF7294E5703A6",
+      "sequence": 20,
+      "clickAt": 1795269068100,
+      "handedToNodeAt": 1795269070758,
+      "broadcastReturnedAt": 1795269072177,
+      "committed": {
+        "height": "10496676",
+        "time": "2026-11-21T13:51:10.181188234Z"
+      },
+      "payee": {
+        "determined": 1795269074248,
+        "settled": 1795272714726
+      },
+      "auditor": {
+        "determined": 1795269074608,
+        "settled": 1795272714764
+      },
+      "batch": {
+        "index": 7,
+        "submittedAt": 10496699,
+        "submittedTime": 1795269103,
+        "finalizedAt": 10499213,
+        "finalizedTime": "2026-11-21T14:51:43.708608622Z"
+      }
+    }
+  ]
+}

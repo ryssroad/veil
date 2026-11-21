@@ -1,0 +1,89 @@
+{
+  "method": "Same as run 1. Bracket the Desk timestamp with adjacent Diana headers, then subtract one from the preceding header height to estimate the last committed height. RPC visibility was not measured.",
+  "observations": {
+    "payRequest": {
+      "atMs": 1795269068100,
+      "headerAtOrBefore": 10496674,
+      "nextHeader": 10496675,
+      "estimatedLastCommitted": 10496673
+    },
+    "nodeAccepted": {
+      "atMs": 1795269070758,
+      "headerAtOrBefore": 10496676,
+      "nextHeader": 10496677,
+      "estimatedLastCommitted": 10496675
+    },
+    "broadcastReturned": {
+      "atMs": 1795269072177,
+      "headerAtOrBefore": 10496677,
+      "nextHeader": 10496678,
+      "estimatedLastCommitted": 10496676
+    },
+    "payeeDetermined": {
+      "atMs": 1795269074248,
+      "headerAtOrBefore": 10496678,
+      "nextHeader": 10496679,
+      "estimatedLastCommitted": 10496677
+    },
+    "auditorDetermined": {
+      "atMs": 1795269074608,
+      "headerAtOrBefore": 10496679,
+      "nextHeader": 10496680,
+      "estimatedLastCommitted": 10496678
+    }
+  },
+  "headers": [
+    {
+      "height": 10496670,
+      "time": "2026-11-21T13:51:01.728902015Z"
+    },
+    {
+      "height": 10496671,
+      "time": "2026-11-21T13:51:03.178229214Z"
+    },
+    {
+      "height": 10496672,
+      "time": "2026-11-21T13:51:04.613505908Z"
+    },
+    {
+      "height": 10496673,
+      "time": "2026-11-21T13:51:05.968840341Z"
+    },
+    {
+      "height": 10496674,
+      "time": "2026-11-21T13:51:07.396545570Z"
+    },
+    {
+      "height": 10496675,
+      "time": "2026-11-21T13:51:08.776453294Z"
+    },
+    {
+      "height": 10496676,
+      "time": "2026-11-21T13:51:10.181188234Z"
+    },
+    {
+      "height": 10496677,
+      "time": "2026-11-21T13:51:11.669332298Z"
+    },
+    {
+      "height": 10496678,
+      "time": "2026-11-21T13:51:13.100155270Z"
+    },
+    {
+      "height": 10496679,
+      "time": "2026-11-21T13:51:14.495922545Z"
+    },
+    {
+      "height": 10496680,
+      "time": "2026-11-21T13:51:15.969465327Z"
+    },
+    {
+      "height": 10496681,
+      "time": "2026-11-21T13:51:17.379869160Z"
+    },
+    {
+      "height": 10496682,
+      "time": "2026-11-21T13:51:18.796416774Z"
+    }
+  ]
+}

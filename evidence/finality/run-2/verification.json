@@ -1,0 +1,17 @@
+{
+  "rollup": "veil-pay-1",
+  "batchIndex": 7,
+  "finalizedHeight": 10499213,
+  "verifiedAt": "2026-11-21T14:52:32.241Z",
+  "valid": true,
+  "mode": "chain",
+  "signBytesVersion": "v2",
+  "checks": {
+    "rollupLayerBinding": true,
+    "batchStateRoot": true,
+    "anchorOnChain": true,
+    "creatorAuthority": true,
+    "pqcSignature": true,
+    "chainBinding": true
+  }
+}

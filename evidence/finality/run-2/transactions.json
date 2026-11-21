@@ -1,0 +1,31 @@
+{
+  "payment": {
+    "hash": "24A90F9FD2055125FD0126BC8B1F598103791F96660E641DCA5BF7294E5703A6",
+    "height": 10496676,
+    "code": 0,
+    "fee": [
+      {
+        "denom": "uqor",
+        "amount": "540000"
+      }
+    ],
+    "messages": [
+      "/qorechain.rdk.v1.MsgPostRollupData",
+      "/qorechain.rdk.v1.MsgPostRollupData"
+    ]
+  },
+  "batch": {
+    "hash": "0107DDFA198ED46564F8E20668BE2F66B37799DD2E1BCB55F9BF20817AC0AEF6",
+    "height": 10496699,
+    "code": 0,
+    "fee": [
+      {
+        "denom": "uqor",
+        "amount": "270000"
+      }
+    ],
+    "messages": [
+      "/qorechain.rdk.v1.MsgSubmitBatch"
+    ]
+  }
+}
