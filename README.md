@@ -78,7 +78,9 @@ The reader reports three states for each invoice:
 
 **The condition.** The guarantee needs one honest watcher during each window, ours or anyone's. An unchallenged divergent batch would finalize on L1, and withdrawals would follow it. Desk shows when the watcher falls behind (`unwatched`). With `VEIL_WATCHER_MNEMONIC` set, the Desk server polls Diana for as long as it runs, with or without a browser, and challenges a divergent batch from that account. It retries delivery until the chain decides or the window closes. Either way, it records the chain's verdict, including a race won by a third-party watcher, as on 18 Nov.
 
-The watcher reproduces Diana's verdict on the real batch 2: it flags the forgery with a fraud proof byte-identical to the one the chain upheld (sha256 `ef5f485b…b28c`), then accepts the honest replacement (`finality.test.mjs`). The live click-to-reader measurement is pending ([#12](https://github.com/ryssroad/veil/issues/12)).
+The watcher reproduces Diana's verdict on the real batch 2: it flags the forgery with a fraud proof byte-identical to the one the chain upheld (sha256 `ef5f485b…b28c`), then accepts the honest replacement (`finality.test.mjs`).
+
+On Diana, run 1 reached `determined` **5.938 s after Desk received Pay for the payee and 6.111 s for the auditor**. One Desk process checked the two readers in that order. The estimated last committed height advanced **4 blocks** from Pay to determination, exceeding the 2–3 block target in issue #12. [Run 1 report](./evidence/finality/README.md)
 
 **Limits of v1.**
 - `auditorKey` is the payer's signed *declaration*. A reader cannot prove that the second slot really opens for the auditor; confirmed auditor access would need an acknowledgement protocol.
