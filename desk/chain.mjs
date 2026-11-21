@@ -65,25 +65,27 @@ export function quickInclusion(transport, { pollMs = 400, now = Date.now, sleep 
   transport.broadcastTx = async (tx, timeoutMs = 60_000) => {
     const txId = await transport.broadcastTxSync(tx);
     transport.handedAt = now();
+    const deadline = transport.handedAt + timeoutMs;
     let lookupError;
     // The lookup, or undefined when the deadline passes first. The abandoned lookup is left to finish on its own.
     const lookup = () => new Promise((resolve) => {
-      const timer = setTimeout(resolve, Math.max(0, timeoutMs - (now() - transport.handedAt)));
+      const timer = setTimeout(resolve, Math.max(0, deadline - now()));
       Promise.resolve().then(() => transport.getTx(txId)).then(resolve, (err) => { lookupError = err; resolve(); })
         .finally(() => clearTimeout(timer));
     });
-    for (;;) {
+    while (now() < deadline) {
       const result = await lookup();
+      const remaining = deadline - now();
+      if (remaining <= 0) break;
       if (result) {
         return { code: result.code, height: result.height, txIndex: result.txIndex, events: result.events, rawLog: result.rawLog,
           transactionHash: txId, msgResponses: result.msgResponses, gasUsed: result.gasUsed, gasWanted: result.gasWanted };
       }
-      if (now() - transport.handedAt >= timeoutMs) {
-        throw new TimeoutError(`Transaction with ID ${txId} was submitted but was not yet found on the chain. There was a wait of ${timeoutMs / 1000} seconds.`
-          + (lookupError ? ` Last lookup error: ${String(lookupError?.message ?? lookupError).slice(0, 120)}` : ''), txId);
-      }
-      await sleep(pollMs);
+      await sleep(Math.min(pollMs, remaining));
+      if (pollMs >= remaining) break;
     }
+    throw new TimeoutError(`Transaction with ID ${txId} was submitted but was not yet found on the chain. There was a wait of ${timeoutMs / 1000} seconds.`
+      + (lookupError ? ` Last lookup error: ${String(lookupError?.message ?? lookupError).slice(0, 120)}` : ''), txId);
   };
   return transport;
 }

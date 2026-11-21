@@ -400,6 +400,33 @@ test('the inclusion deadline ends a lookup that is still pending', async () => {
   assert.deepEqual([accepted, lookups], [1, 1], 'one broadcast, and no second lookup behind the pending one');
 });
 
+for (const clockType of ['virtual clock', 'real timer']) {
+  test(`an empty lookup at a short deadline does not trigger a second lookup (${clockType})`, async () => {
+    const hash = 'AB'.repeat(32);
+    const options = { pollMs: 80 };
+    let elapsed = 0;
+    if (clockType === 'virtual clock') {
+      options.now = () => elapsed;
+      options.sleep = async (ms) => { elapsed += ms; };
+    }
+    let broadcasts = 0;
+    let lookups = 0;
+    const transport = quickInclusion({
+      broadcastTxSync: async () => { broadcasts += 1; return hash; },
+      getTx: async () => {
+        lookups += 1;
+        return lookups === 1 ? null : { code: 0, height: 12 };
+      },
+    }, options);
+
+    await assert.rejects(transport.broadcastTx(Uint8Array.of(1), 20),
+      (err) => err instanceof TimeoutError && err.txId === hash);
+    assert.equal(broadcasts, 1);
+    assert.equal(lookups, 1);
+    if (clockType === 'virtual clock') assert.equal(elapsed, 20);
+  });
+}
+
 test('a REST read that never answers is abandoned after its time limit', async (t) => {
   const real = globalThis.fetch;
   t.after(() => { globalThis.fetch = real; });
