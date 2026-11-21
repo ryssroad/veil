@@ -119,4 +119,5 @@ test('a configured watcher keeps the server reading Diana with no browser, recor
   assert.ok(await run({ recording: true }) >= 3);
   const measuring = await run({ measuring: () => true });
   assert.ok(measuring > await run({ watching: true }), 'a payment being measured is read on every tick');
+  assert.ok(await run({ settling: () => true }) >= 3, 'a determined payment is still read until it settles');
 });

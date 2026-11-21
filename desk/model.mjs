@@ -75,13 +75,15 @@ export function batchDeadline(batch, windowSecs) {
 /**
  * The server's own reads of Diana, with no browser asking. A configured
  * watcher polls for as long as the server runs: a challenge window can pass
- * entirely while no tab is open. `read` must not throw.
+ * entirely while no tab is open. A Desk payment is read on every tick until
+ * both readers determine it, then at the slow cadence until it settles.
+ * `read` must not throw.
  */
-export function startPolling({ read, measuring, watching, recording, everyMs = 1000 }) {
+export function startPolling({ read, measuring, settling = () => false, watching, recording, everyMs = 1000 }) {
   let tick = 0;
   if (watching || recording) void read();
   return setInterval(() => {
     tick += 1;
-    if (measuring() || ((watching || recording) && tick % 3 === 0)) void read();
+    if (measuring() || ((watching || recording || settling()) && tick % 3 === 0)) void read();
   }, everyMs);
 }

@@ -18,11 +18,15 @@ const times = new Map();
 let lastKey, lastState, lastBatches, last, keys, watcher, creator;
 
 // Wall-clock observations for the finality measurement (#12).
-const clicks = new Map();      // tx hash -> { clickAt, sentAt, height }
+const clicks = new Map();      // tx hash -> { clickAt, handedAt, sentAt, height }
+const inFlight = new Set();    // { clickAt } per Desk payment between the click and the broadcast's return
+const FAST_READS_MS = 60_000;  // per-tick reads last at most this long after the Pay click
+const RECHECK_MS = 5_000;      // an unverified receipt is verified again this long after it failed
+const receipts = new Map();    // `${batchIndex}:${stateRoot}` -> a receipt verification that passed
 const observed = new Map();    // `${reader}:${tx hash}:${status}` -> first ms this reader produced it
 
 /** Chain access the incident tracker uses; tests replace these. */
-export const deps = { challenge, txResult, challengeOutcomes, now: () => Date.now() };
+export const deps = { challenge, txResult, challengeOutcomes, verifyBatch, now: () => Date.now() };
 const tracker = createIncidentTracker({
   send: watching ? async (index, proofHex) => {
     watcher ??= await mnemonicAccount(watcherFile);
@@ -34,11 +38,35 @@ const tracker = createIncidentTracker({
   now: () => deps.now(),
 });
 
-/** Called by the server when a Desk payment's broadcast returns. The readers may already have seen it. */
-export function notePayment(hash, clickAt, height) {
-  clicks.set(hash, { clickAt, sentAt: Date.now(), height: String(height) });
+/**
+ * Called by the server the moment Pay arrives, with that moment. The readers
+ * then read Diana on every tick: a reader's result must not wait for the
+ * payer's client to learn that its own transaction was included. Returns the
+ * function that ends the in-flight phase.
+ */
+export function beginPayment(clickAt = deps.now()) {
+  const payment = { clickAt };
+  inFlight.add(payment);
+  return () => { inFlight.delete(payment); };
 }
-export const measuring = () => [...clicks.keys()].some(hash => !observed.has(`auditor:${hash}:settled`));
+/**
+ * Called by the server when a Desk payment's broadcast returns. The readers may
+ * already have seen it. `handedAt` is when the node accepted the transaction.
+ */
+export function notePayment(hash, clickAt, height, handedAt) {
+  clicks.set(hash, { clickAt, handedAt: handedAt ?? null, sentAt: Date.now(), height: String(height) });
+}
+const reader = (name, hash, status) => observed.has(`${name}:${hash}:${status}`);
+const fast = clickAt => deps.now() - clickAt < FAST_READS_MS;
+/**
+ * Read on every tick: within 60 s of a Pay click, while that payment is in
+ * flight or committed and not yet determined by both readers. The one deadline
+ * runs from the click, whatever the broadcast does.
+ */
+export const measuring = () => [...inFlight].some(p => fast(p.clickAt))
+  || [...clicks].some(([hash, c]) => fast(c.clickAt) && !(reader('payee', hash, 'determined') && reader('auditor', hash, 'determined')));
+/** Keep reading at the slow cadence: a measured payment has not settled for both readers. */
+export const settling = () => [...clicks.keys()].some(hash => !(reader('payee', hash, 'settled') && reader('auditor', hash, 'settled')));
 
 function identities() {
   if (keys) return keys;
@@ -131,7 +159,9 @@ export async function snapshot() {
   const [registered, bond] = await Promise.all([registryKey(auditorAddress), client.rest.getSubmitterBond(rollupId, roll.creator)]);
   const auditorKey = registered && kemFingerprint(registered.key);
   const key = JSON.stringify([chainKey, bond, auditorKey]);
-  if (lastKey === key) {
+  // A receipt check that failed may have failed in transit: verify again on an unchanged chain.
+  const recheck = lastState?.recheckAt != null && deps.now() >= lastState.recheckAt;
+  if (lastKey === key && !recheck) {
     // Nothing moved: the last rows still hold, and the watcher is current.
     lastState.watch.checkedAt = checkedAt;
     lastState.incidents = incidents;
@@ -145,10 +175,13 @@ export async function snapshot() {
   const { bindings, events } = discoverReaderKeys(entries);
   const { ledger, executions, withdrawals } = replayExecutions(entries);
   const paymentsBySequence = new Map([...executions, ...withdrawals].map(tx => [tx.sequence, tx]));
-  const receipts = new Map();
+  // A finalized batch's receipt does not change: verify it once per root and reuse a pass. A failure is asked again.
+  const asked = new Map();
   const receiptFor = batch => {
-    if (!receipts.has(batch.batchIndex)) receipts.set(batch.batchIndex, verifyBatch(batch));
-    return receipts.get(batch.batchIndex);
+    const id = `${batch.batchIndex}:${batch.stateRoot}`;
+    if (receipts.has(id)) return receipts.get(id);
+    if (!asked.has(id)) asked.set(id, deps.verifyBatch(batch).then(r => { if (r.valid) receipts.set(id, r); return r; }));
+    return asked.get(id);
   };
   const bound = bindings.get(id.payeeId);
   const ownKey = kemFingerprint(id.payee.mlkemPublicKey);
@@ -176,6 +209,7 @@ export async function snapshot() {
       ...classifyEntry(e, paymentsBySequence.get(e.sequence), events.find(x => x.sequence === e.sequence)) })).reverse(),
     payee: { ...payee, account: id.payeeId, fingerprint: bound?.fingerprint, ownKey, sequence: bound?.sequence },
     auditor: { ...auditor, address: auditorAddress, fingerprint: auditorKey } };
+  state.recheckAt = [...payee.rows, ...auditor.rows].some(r => r.status === 'unverified') ? deps.now() + RECHECK_MS : null;
   lastState = state;
   lastKey = key;
   return decorate(state);
@@ -195,7 +229,7 @@ export async function finalityReport() {
     const committedTime = await blockTime(c.height).catch(() => null);
     const finalizedTime = batch?.finalizedAt ? await blockTime(batch.finalizedAt).catch(() => null) : null;
     const reader = name => ({ determined: observed.get(`${name}:${hash}:determined`) ?? null, settled: observed.get(`${name}:${hash}:settled`) ?? null });
-    out.push({ tx: hash, sequence: row?.sequence ?? null, clickAt: c.clickAt, broadcastReturnedAt: c.sentAt,
+    out.push({ tx: hash, sequence: row?.sequence ?? null, clickAt: c.clickAt, handedToNodeAt: c.handedAt, broadcastReturnedAt: c.sentAt,
       committed: { height: c.height, time: committedTime }, payee: reader('payee'), auditor: reader('auditor'),
       batch: batch ? { index: batch.index, submittedAt: batch.submittedAt, submittedTime: batch.submittedTime,
         finalizedAt: batch.finalizedAt, finalizedTime } : null });
