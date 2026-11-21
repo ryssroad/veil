@@ -5,7 +5,7 @@ import { sealKeysFromSeed } from '@qorechain/qoreseal';
 import { rollupId, hex, discoverReaderKeys, replayExecutions, kemFingerprint } from '../veil.mjs';
 import { watchBatches, PENDING } from '../finality.mjs';
 import { client, getJson, inboxEntries, batches, payeeKeys, registryKey, verifyBatch, readInvoices,
-  challengeOutcomes, challenge, txResult, mnemonicAccount } from './chain.mjs';
+  challengeOutcomes, challenge, txResult, mnemonicAccount, broadcastFailure } from './chain.mjs';
 import { batchDeadline, classifyEntry } from './model.mjs';
 import { createIncidentTracker } from './incidents.mjs';
 
@@ -54,7 +54,24 @@ export function beginPayment(clickAt = deps.now()) {
  * already have seen it. `handedAt` is when the node accepted the transaction.
  */
 export function notePayment(hash, clickAt, height, handedAt) {
-  clicks.set(hash, { clickAt, handedAt: handedAt ?? null, sentAt: Date.now(), height: String(height) });
+  clicks.set(hash, { clickAt, handedAt: handedAt ?? null, sentAt: Date.now(), height: height == null ? null : String(height) });
+}
+/**
+ * Run a Desk payment and register it for measurement. A payment the node
+ * accepted whose result did not come back (a timeout) is registered too, under
+ * its hash and the same click: the readers will see it in a block, and the
+ * report must not lose it. A payment known to have failed is not registered.
+ */
+export async function measuredPay(clickAt, send) {
+  try {
+    const tx = await send();
+    notePayment(tx.hash, clickAt, tx.height, tx.handedAt);
+    return tx;
+  } catch (err) {
+    const failed = broadcastFailure(err);
+    if (failed.hash && failed.code == null) notePayment(failed.hash, clickAt, null, err?.handedAt);
+    throw err;
+  }
 }
 const reader = (name, hash, status) => observed.has(`${name}:${hash}:${status}`);
 const fast = clickAt => deps.now() - clickAt < FAST_READS_MS;
@@ -66,7 +83,9 @@ const fast = clickAt => deps.now() - clickAt < FAST_READS_MS;
 export const measuring = () => [...inFlight].some(p => fast(p.clickAt))
   || [...clicks].some(([hash, c]) => fast(c.clickAt) && !(reader('payee', hash, 'determined') && reader('auditor', hash, 'determined')));
 /** Keep reading at the slow cadence: a measured payment has not settled for both readers. */
-export const settling = () => [...clicks.keys()].some(hash => !(reader('payee', hash, 'settled') && reader('auditor', hash, 'settled')));
+export const settling = () => [...clicks].some(([hash, c]) => !(reader('payee', hash, 'settled') && reader('auditor', hash, 'settled'))
+  // A payment whose result never came back and that no reader has seen is dropped after the fast window.
+  && (c.height != null || fast(c.clickAt) || reader('payee', hash, 'determined') || reader('auditor', hash, 'determined')));
 
 function identities() {
   if (keys) return keys;
@@ -226,11 +245,13 @@ export async function finalityReport() {
   for (const [hash, c] of clicks) {
     const row = s?.auditor.rows.find(r => r.tx === hash) ?? s?.payee.rows.find(r => r.tx === hash);
     const batch = row && s.batches.find(b => b.index === row.batch);
-    const committedTime = await blockTime(c.height).catch(() => null);
+    // The block is the one the broadcast reported or, when its result never came back, the one the readers saw.
+    const height = c.height ?? row?.height ?? null;
+    const committedTime = height == null ? null : await blockTime(height).catch(() => null);
     const finalizedTime = batch?.finalizedAt ? await blockTime(batch.finalizedAt).catch(() => null) : null;
     const reader = name => ({ determined: observed.get(`${name}:${hash}:determined`) ?? null, settled: observed.get(`${name}:${hash}:settled`) ?? null });
     out.push({ tx: hash, sequence: row?.sequence ?? null, clickAt: c.clickAt, handedToNodeAt: c.handedAt, broadcastReturnedAt: c.sentAt,
-      committed: { height: c.height, time: committedTime }, payee: reader('payee'), auditor: reader('auditor'),
+      committed: { height, time: committedTime }, payee: reader('payee'), auditor: reader('auditor'),
       batch: batch ? { index: batch.index, submittedAt: batch.submittedAt, submittedTime: batch.submittedTime,
         finalizedAt: batch.finalizedAt, finalizedTime } : null });
   }

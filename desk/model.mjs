@@ -1,6 +1,7 @@
 import { parseEnvelope } from '@qorechain/qoreseal';
 import { batchChallengeWindow, decodeQledgerDeposit, QLEDGER_DEPOSIT_POSTER_PREFIX } from '@qorechain/rdk';
 import { chainId, rollupId, decodeReaderStatement, hex, sha256 } from '../veil.mjs';
+import { broadcastFailure } from './chain.mjs';
 
 // For a rejected VRK1, display the claimed identity separately from verified bindings.
 function claimedIdentity(bytes) {
@@ -86,4 +87,21 @@ export function startPolling({ read, measuring, settling = () => false, watching
     tick += 1;
     if (measuring() || ((watching || recording || settling()) && tick % 3 === 0)) void read();
   }, everyMs);
+}
+
+/**
+ * What Desk answers when an action fails. A transaction the node accepted is
+ * always reported with its hash: rejected with its code, or submitted with an
+ * unknown result, so the user checks the inbox instead of paying again.
+ */
+export function actionFailure(err, { input = false } = {}) {
+  if (input) return { status: 400, result: { error: err.message } };
+  const failed = broadcastFailure(err);
+  if (failed.hash && failed.code != null) {
+    return { status: 502, result: { hash: failed.hash, code: failed.code, height: failed.height, error: 'Transaction rejected.' } };
+  }
+  if (failed.hash) {
+    return { status: 502, result: { hash: failed.hash, error: 'Transaction submitted; its result is not known yet. Check the inbox before retrying.' } };
+  }
+  return { status: 502, result: { error: 'Action failed. Check the operator, payer balance and reader binding before retrying.' } };
 }

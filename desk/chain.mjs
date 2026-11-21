@@ -19,11 +19,19 @@ import { entriesFromTxs, accumulate, watchBatches, dispute } from '../finality.m
 export const json = (v) => JSON.stringify(v, (_, x) => (typeof x === 'bigint' ? String(x) : x), 2) + '\n';
 const now = () => new Date().toISOString();
 
-export const client = createRdkClient({ network: 'testnet' });
+/**
+ * A fetch that gives up after `timeoutMs`: a read of Diana that never answers
+ * must not hold a Desk read, and with it the watcher, for longer than this.
+ */
+export const boundedFetch = (timeoutMs = 10_000) => (url, init = {}) =>
+  globalThis.fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+const restFetch = boundedFetch();
+
+export const client = createRdkClient({ network: 'testnet', fetch: restFetch });
 const rest = client.network.endpoints.rest;
 
 export async function getJson(route) {
-  const res = await fetch(rest + route);
+  const res = await restFetch(rest + route);
   assert.ok(res.ok, route + ' HTTP ' + res.status);
   return res.json();
 }
@@ -50,16 +58,22 @@ export const payeeKeys = (dir) => ({
  *
  * Once the node has accepted the transaction its hash is never lost: a lookup
  * that fails is tried again, and the only error this can throw from then on is
- * the timeout, which carries the hash.
+ * the timeout, which carries the hash. The deadline also ends a lookup that is
+ * still pending, so a node that stops answering cannot hold the caller.
  */
 export function quickInclusion(transport, { pollMs = 400, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   transport.broadcastTx = async (tx, timeoutMs = 60_000) => {
     const txId = await transport.broadcastTxSync(tx);
     transport.handedAt = now();
     let lookupError;
+    // The lookup, or undefined when the deadline passes first. The abandoned lookup is left to finish on its own.
+    const lookup = () => new Promise((resolve) => {
+      const timer = setTimeout(resolve, Math.max(0, timeoutMs - (now() - transport.handedAt)));
+      Promise.resolve().then(() => transport.getTx(txId)).then(resolve, (err) => { lookupError = err; resolve(); })
+        .finally(() => clearTimeout(timer));
+    });
     for (;;) {
-      let result;
-      try { result = await transport.getTx(txId); } catch (err) { lookupError = err; }
+      const result = await lookup();
       if (result) {
         return { code: result.code, height: result.height, txIndex: result.txIndex, events: result.events, rawLog: result.rawLog,
           transactionHash: txId, msgResponses: result.msgResponses, gasUsed: result.gasUsed, gasWanted: result.gasWanted };
@@ -93,6 +107,10 @@ export async function broadcast(account, messages, name, { mode = 'hybrid', regi
     console.log(out);
     if (tx.code !== 0) throw Object.assign(new Error('Transaction failed with code ' + tx.code), { tx: out });
     return out;
+  } catch (err) {
+    // When the node accepted it before the failure, the caller still learns when.
+    if (err && typeof err === 'object' && transport.handedAt !== undefined) err.handedAt ??= transport.handedAt;
+    throw err;
   } finally {
     transport.disconnect();
   }

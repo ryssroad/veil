@@ -3,9 +3,9 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url';
 import { depositToRollupMsg } from '@qorechain/rdk';
 import { rollupId, chainId } from '../veil.mjs';
-import { client, operator, broadcast, broadcastFailure, pay, submitBatch } from './chain.mjs';
-import { auditorAddress, snapshot, beginPayment, notePayment, measuring, settling, watching, finalityReport } from './state.mjs';
-import { invoicesCsv, parseQor, startPolling } from './model.mjs';
+import { client, operator, broadcast, pay, submitBatch } from './chain.mjs';
+import { auditorAddress, snapshot, beginPayment, measuredPay, measuring, settling, watching, finalityReport } from './state.mjs';
+import { actionFailure, invoicesCsv, parseQor, startPolling } from './model.mjs';
 
 process.chdir(fileURLToPath(new URL('../', import.meta.url)));
 const address = '127.0.0.1:8788';
@@ -65,8 +65,7 @@ async function action(body, clickAt) {
   const op = await operator(process.env.VEIL_OPERATOR_MNEMONIC, roll);
   let tx;
   if (body.action === 'pay') {
-    tx = await pay(op, body.payee, auditorAddress, amount, body.description);
-    notePayment(tx.hash, clickAt, tx.height, tx.handedAt);
+    tx = await measuredPay(clickAt, () => pay(op, body.payee, auditorAddress, amount, body.description));
   }
   if (body.action === 'batch') tx = await submitBatch(op, roll);
   if (body.action === 'top-up') {
@@ -129,12 +128,9 @@ createServer(async (req, res) => {
       record('action-end', { action: busy, result });
       send(200, result);
     } catch (err) {
-      const failed = broadcastFailure(err);
-      const result = err.tx ? { hash: err.tx.hash, code: err.tx.code, height: err.tx.height, error: 'Transaction rejected.' }
-        : failed.hash && failed.code == null ? { hash: failed.hash, error: 'Transaction submitted; its result is not known yet. Check the inbox before retrying.' }
-        : { error: err instanceof InputError ? err.message : 'Action failed. Check the operator, payer balance and reader binding before retrying.' };
+      const { status, result } = actionFailure(err, { input: err instanceof InputError });
       record('action-end', { action: busy, result });
-      send(err instanceof InputError ? 400 : 502, result);
+      send(status, result);
     } finally { endPayment(); busy = null; lastRead = 0; }
   } catch (err) {
     send(err instanceof InputError ? 400 : 503, { error: err instanceof InputError ? err.message : 'Unable to read Diana or the local reader files. Retry to refresh.' });

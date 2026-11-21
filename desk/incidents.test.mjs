@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TimeoutError, BroadcastTxError } from '@cosmjs/stargate';
 import { createIncidentTracker } from './incidents.mjs';
-import { challenge, broadcastFailure, quickInclusion } from './chain.mjs';
+import { challenge, broadcastFailure, quickInclusion, boundedFetch } from './chain.mjs';
 
 const WINDOW = 3600;
 const forged = (over = {}) => ({ index: 2, status: 'submitted', start: 4, end: 5, stateRoot: 'ab'.repeat(32), verdict: 'diverged',
@@ -379,4 +379,41 @@ test('a lookup that fails after the node accepted the transaction does not lose 
   assert.ok(err instanceof TimeoutError);
   assert.match(err.message, /Last lookup error: HTTP 503/);
   assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [H, null]);
+});
+
+// ------------------------------------------------ second review of PR 15
+
+test('the inclusion deadline ends a lookup that is still pending', async () => {
+  const H = 'FA'.repeat(32);
+  let accepted = 0;
+  let lookups = 0;
+  const transport = quickInclusion({
+    broadcastTxSync: async () => { accepted += 1; return H; },
+    getTx: () => { lookups += 1; return new Promise(() => {}); },   // the node stops answering
+  });
+  const started = Date.now();
+  const err = await transport.broadcastTx(Uint8Array.of(1), 20).catch((e) => e);
+  assert.ok(Date.now() - started < 1000, 'the caller is released at the deadline');
+  assert.ok(err instanceof TimeoutError);
+  assert.equal(err.txId, H);
+  assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [H, null]);
+  assert.deepEqual([accepted, lookups], [1, 1], 'one broadcast, and no second lookup behind the pending one');
+});
+
+test('a REST read that never answers is abandoned after its time limit', async (t) => {
+  const real = globalThis.fetch;
+  t.after(() => { globalThis.fetch = real; });
+  let seen;
+  globalThis.fetch = (url, init) => new Promise((resolve, reject) => {
+    seen = { url, accept: init.headers?.accept };
+    init.signal.addEventListener('abort', () => reject(init.signal.reason));
+  });
+  // The time limit's own timer does not keep the process alive; a real socket would.
+  const alive = setTimeout(() => {}, 5000);
+  t.after(() => clearTimeout(alive));
+  const started = Date.now();
+  const err = await boundedFetch(20)('https://diana.invalid/x', { headers: { accept: 'application/json' } }).catch((e) => e);
+  assert.equal(err.name, 'TimeoutError');
+  assert.ok(Date.now() - started < 1000);
+  assert.deepEqual(seen, { url: 'https://diana.invalid/x', accept: 'application/json' });
 });
