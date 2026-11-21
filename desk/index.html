@@ -1261,8 +1261,8 @@
               tx.hash +
               '">' +
               short(tx.hash) +
-              '</a> · code ' +
-              escapeHtml(tx.code)
+              '</a>' +
+              (tx.code == null ? '' : ' · code ' + escapeHtml(tx.code))
             : '') +
           '<button aria-label="Dismiss notification">×</button>';
         $('toast').querySelector('button').onclick = () => {

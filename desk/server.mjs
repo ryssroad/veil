@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { depositToRollupMsg } from '@qorechain/rdk';
 import { rollupId, chainId } from '../veil.mjs';
 import { client, operator, broadcast, pay, submitBatch } from './chain.mjs';
-import { auditorAddress, snapshot, notePayment, measuring, watching, finalityReport } from './state.mjs';
-import { invoicesCsv, parseQor, startPolling } from './model.mjs';
+import { auditorAddress, snapshot, beginPayment, measuredPay, measuring, settling, watching, finalityReport } from './state.mjs';
+import { actionFailure, invoicesCsv, parseQor, startPolling } from './model.mjs';
 
 process.chdir(fileURLToPath(new URL('../', import.meta.url)));
 const address = '127.0.0.1:8788';
@@ -65,8 +65,7 @@ async function action(body, clickAt) {
   const op = await operator(process.env.VEIL_OPERATOR_MNEMONIC, roll);
   let tx;
   if (body.action === 'pay') {
-    tx = await pay(op, body.payee, auditorAddress, amount, body.description);
-    notePayment(tx.hash, clickAt, tx.height);
+    tx = await measuredPay(clickAt, () => pay(op, body.payee, auditorAddress, amount, body.description));
   }
   if (body.action === 'batch') tx = await submitBatch(op, roll);
   if (body.action === 'top-up') {
@@ -122,21 +121,22 @@ createServer(async (req, res) => {
     if (!['pay', 'top-up', 'batch', 'mark'].includes(body.action)) throw new InputError('Unknown action.');
     busy = body.action;
     record('action-start', { action: busy });
+    // The readers read every block from the moment Pay arrived, independently of the broadcast.
+    const endPayment = body.action === 'pay' ? beginPayment(clickAt) : () => {};
     try {
       const result = await action(body, clickAt);
       record('action-end', { action: busy, result });
       send(200, result);
     } catch (err) {
-      const result = err.tx ? { hash: err.tx.hash, code: err.tx.code, height: err.tx.height, error: 'Transaction rejected.' }
-        : { error: err instanceof InputError ? err.message : 'Action failed. Check the operator, payer balance and reader binding before retrying.' };
+      const { status, result } = actionFailure(err, { input: err instanceof InputError });
       record('action-end', { action: busy, result });
-      send(err instanceof InputError ? 400 : 502, result);
-    } finally { busy = null; lastRead = 0; }
+      send(status, result);
+    } finally { endPayment(); busy = null; lastRead = 0; }
   } catch (err) {
     send(err instanceof InputError ? 400 : 503, { error: err instanceof InputError ? err.message : 'Unable to read Diana or the local reader files. Retry to refresh.' });
   }
 }).listen(8788, '127.0.0.1', () => {
   console.log('Veil Desk at ' + origin + (session ? ' · recording ' + session : ''));
   if (watching) console.log('Watcher account configured: polling Diana and challenging divergent batches while this server runs.');
-  startPolling({ read: () => state().catch(() => {}), measuring, watching, recording: Boolean(session) }).unref();
+  startPolling({ read: () => state().catch(() => {}), measuring, settling, watching, recording: Boolean(session) }).unref();
 });

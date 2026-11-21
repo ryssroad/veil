@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TimeoutError, BroadcastTxError } from '@cosmjs/stargate';
 import { createIncidentTracker } from './incidents.mjs';
-import { challenge, broadcastFailure } from './chain.mjs';
+import { challenge, broadcastFailure, quickInclusion, boundedFetch } from './chain.mjs';
 
 const WINDOW = 3600;
 const forged = (over = {}) => ({ index: 2, status: 'submitted', start: 4, end: 5, stateRoot: 'ab'.repeat(32), verdict: 'diverged',
@@ -323,4 +323,124 @@ test('without any height read nothing is linked, and every verdict stays visible
   list = await h.step(8000, view(forged(b)), false, 107);
   assert.deepEqual(shape(list), [[105, 'submitted', null], [100, 'rejected', HA]]);
   once(list, HA);
+});
+
+// ------------------------------------------------- run 1 on Diana (PR 14)
+
+test('inclusion is looked up at once and then on a short poll, not after a fixed 3 s', async () => {
+  let clock = 1000;
+  const sleeps = [];
+  const lookups = [];
+  const found = { code: 0, height: 10458203, txIndex: 0, events: [], rawLog: '', msgResponses: [], gasUsed: 1n, gasWanted: 2n };
+  const transport = quickInclusion({
+    broadcastTxSync: async (tx) => { assert.deepEqual([...tx], [1, 2, 3]); clock += 20; return 'AB'.repeat(32); },
+    getTx: async (id) => { lookups.push([id, clock]); return lookups.length < 3 ? null : found; },
+  }, { pollMs: 400, now: () => clock, sleep: async (ms) => { sleeps.push(ms); clock += ms; } });
+  const res = await transport.broadcastTx(Uint8Array.of(1, 2, 3));
+  assert.equal(transport.handedAt, 1020, 'the moment the node accepted it');
+  assert.deepEqual(lookups.map(([, at]) => at - 1020), [0, 400, 800], 'first lookup with no wait');
+  assert.deepEqual(sleeps, [400, 400]);
+  assert.deepEqual([res.transactionHash, res.code, res.height], ['AB'.repeat(32), 0, 10458203]);
+
+  // Never found: the timeout carries the hash, so a challenge is reconciled instead of resent.
+  const lost = quickInclusion({ broadcastTxSync: async () => 'CD'.repeat(32), getTx: async () => null },
+    { pollMs: 400, now: () => clock, sleep: async (ms) => { clock += ms; } });
+  const err = await lost.broadcastTx(Uint8Array.of(1), 2000).catch((e) => e);
+  assert.ok(err instanceof TimeoutError);
+  assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], ['CD'.repeat(32), null]);
+});
+
+// ----------------------------------------------------- review of PR 15
+
+test('a lookup that fails after the node accepted the transaction does not lose its hash', async () => {
+  const H = 'EF'.repeat(32);
+  let accepted = 0;
+  let lookups = 0;
+  const transportFor = () => quickInclusion({
+    broadcastTxSync: async () => { accepted += 1; return H; },
+    getTx: async () => { lookups += 1; if (lookups === 1) throw new Error('HTTP 503'); return { code: 0, height: 103 }; },
+  }, { pollMs: 400, sleep: async () => {} });
+  // Through the real challenge adapter and the tracker: the first lookup fails, the second confirms.
+  const h = harness({
+    send: (n, index, proofHex) => challenge({ cosmos: 'qor1watcher' }, index, proofHex,
+      { send: async () => { const tx = await transportFor().broadcastTx(Uint8Array.of(1)); return { hash: tx.transactionHash, code: tx.code, height: tx.height }; } }),
+    lookupTx: () => assert.fail('the transport already confirmed it'),
+  });
+  const [i] = await h.step(0, view(forged()), true);
+  assert.deepEqual([i.ours.state, i.ours.hash, i.ours.code, i.ours.attempts], ['included', H, 0, 1]);
+  await h.step(60_000, view(forged()));
+  assert.deepEqual([accepted, lookups], [1, 2], 'sent exactly once');
+
+  // Every lookup fails until the timeout: the error still carries the hash, so the tracker reconciles instead of resending.
+  let clock = 0;
+  const down = quickInclusion({ broadcastTxSync: async () => H, getTx: async () => { throw new Error('HTTP 503'); } },
+    { pollMs: 400, now: () => clock, sleep: async (ms) => { clock += ms; } });
+  const err = await down.broadcastTx(Uint8Array.of(1), 2000).catch((e) => e);
+  assert.ok(err instanceof TimeoutError);
+  assert.match(err.message, /Last lookup error: HTTP 503/);
+  assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [H, null]);
+});
+
+// ------------------------------------------------ second review of PR 15
+
+test('the inclusion deadline ends a lookup that is still pending', async () => {
+  const H = 'FA'.repeat(32);
+  let accepted = 0;
+  let lookups = 0;
+  const transport = quickInclusion({
+    broadcastTxSync: async () => { accepted += 1; return H; },
+    getTx: () => { lookups += 1; return new Promise(() => {}); },   // the node stops answering
+  });
+  const started = Date.now();
+  const err = await transport.broadcastTx(Uint8Array.of(1), 20).catch((e) => e);
+  assert.ok(Date.now() - started < 1000, 'the caller is released at the deadline');
+  assert.ok(err instanceof TimeoutError);
+  assert.equal(err.txId, H);
+  assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [H, null]);
+  assert.deepEqual([accepted, lookups], [1, 1], 'one broadcast, and no second lookup behind the pending one');
+});
+
+for (const clockType of ['virtual clock', 'real timer']) {
+  test(`an empty lookup at a short deadline does not trigger a second lookup (${clockType})`, async () => {
+    const hash = 'AB'.repeat(32);
+    const options = { pollMs: 80 };
+    let elapsed = 0;
+    if (clockType === 'virtual clock') {
+      options.now = () => elapsed;
+      options.sleep = async (ms) => { elapsed += ms; };
+    }
+    let broadcasts = 0;
+    let lookups = 0;
+    const transport = quickInclusion({
+      broadcastTxSync: async () => { broadcasts += 1; return hash; },
+      getTx: async () => {
+        lookups += 1;
+        return lookups === 1 ? null : { code: 0, height: 12 };
+      },
+    }, options);
+
+    await assert.rejects(transport.broadcastTx(Uint8Array.of(1), 20),
+      (err) => err instanceof TimeoutError && err.txId === hash);
+    assert.equal(broadcasts, 1);
+    assert.equal(lookups, 1);
+    if (clockType === 'virtual clock') assert.equal(elapsed, 20);
+  });
+}
+
+test('a REST read that never answers is abandoned after its time limit', async (t) => {
+  const real = globalThis.fetch;
+  t.after(() => { globalThis.fetch = real; });
+  let seen;
+  globalThis.fetch = (url, init) => new Promise((resolve, reject) => {
+    seen = { url, accept: init.headers?.accept };
+    init.signal.addEventListener('abort', () => reject(init.signal.reason));
+  });
+  // The time limit's own timer does not keep the process alive; a real socket would.
+  const alive = setTimeout(() => {}, 5000);
+  t.after(() => clearTimeout(alive));
+  const started = Date.now();
+  const err = await boundedFetch(20)('https://diana.invalid/x', { headers: { accept: 'application/json' } }).catch((e) => e);
+  assert.equal(err.name, 'TimeoutError');
+  assert.ok(Date.now() - started < 1000);
+  assert.deepEqual(seen, { url: 'https://diana.invalid/x', accept: 'application/json' });
 });
