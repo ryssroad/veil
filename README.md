@@ -17,7 +17,7 @@ A typical case is a Travel Rule-style transfer between two providers: the transf
 
 Everything below ran on **QoreChain Diana** (testnet) on rollup [`veil-pay-1`](https://api-testnet.qore.host/qorechain/rdk/v1/rollup/veil-pay-1), a based qledger-v1 optimistic rollup with fraud proofs. Track: **Protocol Builders**.
 
-**Team.** Veil was entered as a two-person team, but the second member dropped out early and did not contribute. All human work on the project is Road's ([`ryssroad`](https://github.com/ryssroad)), done with two AI agents, Claude and Codex, as described in [AI_USAGE.md](AI_USAGE.md).
+**Team.** Road ([`ryssroad`](https://github.com/ryssroad)) and [`zukaman`](https://github.com/zukaman). Road built the protocol, the live runs and the demos with two AI agents, Claude and Codex, as described in [AI_USAGE.md](AI_USAGE.md). zukaman joined late in the fest and reviews Desk; his first fix keeps payments and batches working when demo recording fails ([#17](https://github.com/ryssroad/veil/pull/17)).
 
 ## What ran on Diana
 
