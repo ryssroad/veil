@@ -154,12 +154,14 @@ function connectRpc(limitMs) {
   });
 }
 
-export async function broadcast(account, messages, name, { mode = 'hybrid', registry = createRdkRegistry(), rpcWaitMs = 10_000 } = {}) {
+export async function broadcast(account, messages, name, { mode = 'hybrid', registry = createRdkRegistry(), rpcWaitMs = 10_000,
+  signerFetch = restFetch } = {}) {
   const transport = quickInclusion(await connectRpc(rpcWaitMs));
   try {
     const { account: auth } = await getJson('/cosmos/auth/v1beta1/accounts/' + account.cosmos);
     const base = auth.base_account ?? auth;
-    const signer = new EthNativeSigner(account, { rest, signMode: mode, ...(registry ? { registry } : {}) });
+    // The signer's own REST reads (the sign-bytes version before signing) get the same time limit as Desk's.
+    const signer = new EthNativeSigner(account, { rest, fetch: signerFetch, signMode: mode, ...(registry ? { registry } : {}) });
     const n = messages.length;
     const tx = await signer.signAndBroadcast(transport, {
       chainId, messages,

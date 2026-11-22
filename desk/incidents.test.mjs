@@ -6,7 +6,7 @@ import { TimeoutError, BroadcastTxError, StargateClient } from '@cosmjs/stargate
 import { createIncidentTracker } from './incidents.mjs';
 import { challenge, broadcastFailure, quickInclusion, boundedFetch, broadcast } from './chain.mjs';
 import { actionFailure } from './model.mjs';
-import { deriveUnifiedAccount, EthNativeSigner, generateMnemonic, HYBRID_SIGN_BYTES_REJECTION_LOG } from '@qorechain/sdk';
+import { deriveUnifiedAccount, EthNativeSigner, generateMnemonic, HYBRID_SIGN_BYTES_REJECTION_LOG, clearSignBytesCache } from '@qorechain/sdk';
 import { createRdkRegistry, postRollupDataMsg } from '@qorechain/rdk';
 import { createHash } from 'node:crypto';
 
@@ -626,15 +626,18 @@ test('through the real SDK signer, a lookup that keeps failing after the node ac
 
 // A controlled RPC client in place of StargateClient.connect: when it connects, and whether it answers the chain id.
 // Nothing past the connection may reach the network: any request is recorded in `calls.network` and fails.
-const controlledRpc = (t, { connectAfterMs = 0, chainIdAnswers = true } = {}) => {
+const controlledRpc = (t, { connectAfterMs = 0, chainIdAnswers = true, chain = 'never-checked' } = {}) => {
   const real = { connect: StargateClient.connect, fetch: globalThis.fetch };
   t.after(() => { StargateClient.connect = real.connect; globalThis.fetch = real.fetch; });
   const calls = { getChainId: 0, disconnect: 0, network: [] };
+  const sent = [];
   globalThis.fetch = async (url) => { calls.network.push(String(url)); throw new Error('no network in this test'); };
   const rpc = {
-    getChainId: () => { calls.getChainId += 1; return chainIdAnswers ? Promise.resolve('never-checked') : new Promise(() => {}); },
+    getChainId: () => { calls.getChainId += 1; return chainIdAnswers ? Promise.resolve(chain) : new Promise(() => {}); },
     disconnect: () => { calls.disconnect += 1; },
+    broadcastTxSync: async (tx) => { sent.push(tx); return txHashOf(tx); },
   };
+  Object.defineProperty(calls, 'sent', { value: sent, enumerable: false });
   StargateClient.connect = () => new Promise((r) => setTimeout(() => r(rpc), connectAfterMs));
   return calls;
 };
@@ -659,4 +662,65 @@ test('a node on another chain is refused before anything is signed, and its conn
   const err = await within(1000, broadcast({ cosmos: 'qor1operator' }, [], 'pay', { rpcWaitMs: 1000 }).catch((e) => e));
   assert.match(String(err?.message), /never-checked/, 'refused for its chain id');
   assert.deepEqual(calls, { getChainId: 1, disconnect: 1, network: [] }, 'and nothing after it was asked');
+});
+
+test('the signer’s own REST read before signing is bounded too: nothing is signed or sent, and there is no hash', async (t) => {
+  clearSignBytesCache();
+  const calls = controlledRpc(t, { chain: 'qorechain-diana' });
+  const { account } = await realSigner();
+  // Diana is a legacy sign-bytes chain: before signing, the SDK asks REST whether the v2 upgrade is applied. That read never answers.
+  globalThis.fetch = (url, init = {}) => {
+    calls.network.push(String(url).replace(/^https?:\/\/[^/]+/, ''));
+    if (String(url).includes('/cosmos/auth/v1beta1/accounts/')) {
+      return Promise.resolve(new Response(JSON.stringify({ account: { account_number: '1', sequence: '0' } })));
+    }
+    return new Promise((_, reject) => init.signal?.addEventListener('abort', () => reject(init.signal.reason)));
+  };
+  const messages = [postRollupDataMsg({ rollupId: 'veil-test', poster: account.cosmos, data: Uint8Array.of(1, 2, 3) })];
+  const err = await within(1000, broadcast(account, messages, 'pay', { rpcWaitMs: 1000, signerFetch: boundedFetch(30) }).catch((e) => e));
+  assert.match(String(err?.message), /cannot ask .* applied/, String(err));
+  assert.ok(calls.network.some((u) => u.includes('/cosmos/upgrade/v1beta1/applied_plan/')), calls.network.join(', '));
+  assert.equal(calls.sent.length, 0, 'nothing was signed or sent');
+  assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [null, null], 'no hash to look up');
+});
+
+test('a refusal or a failure that arrives after the submission deadline is handled and changes nothing', async (t) => {
+  const unhandled = [];
+  const onUnhandled = (reason) => unhandled.push(reason);
+  process.on('unhandledRejection', onUnhandled);
+  t.after(() => process.off('unhandledRejection', onUnhandled));
+  const late = { 'CheckTx refusal': new BroadcastTxError(13, 'sdk', 'insufficient fee'),
+    'connection drop': Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }) };
+  for (const [name, lateError] of Object.entries(late)) {
+    let fail;
+    const transport = quickInclusion({ broadcastTxSync: () => new Promise((_, reject) => { fail = reject; }), getTx: async () => null },
+      { submitTimeoutMs: 30 });
+    const err = await within(1000, transport.broadcastTx(Uint8Array.of(1, 2, 3), 60_000).catch((e) => e));
+    const recorded = { txId: err.txId, message: err.message, cause: err.cause, unconfirmed: err.unconfirmed };
+    assert.deepEqual([recorded.txId, recorded.unconfirmed], [SIGNED_123_HASH, true], name);
+    fail(lateError);                   // the node's answer comes after the caller was released
+    await tick(); await tick();
+    assert.deepEqual({ txId: err.txId, message: err.message, cause: err.cause, unconfirmed: err.unconfirmed }, recorded, name);
+    assert.equal(transport.handedAt, undefined, name);
+  }
+  await new Promise((r) => setTimeout(r, 20));   // unhandled rejections are reported after the tick
+  assert.deepEqual(unhandled.map(String), [], 'a late failure is not left unhandled');
+});
+
+test('by default the signer’s REST reads carry Desk’s time limit', async (t) => {
+  clearSignBytesCache();
+  const calls = controlledRpc(t, { chain: 'qorechain-diana' });
+  const { account } = await realSigner();
+  const signals = [];
+  globalThis.fetch = async (url, init = {}) => {
+    calls.network.push(String(url).replace(/^https?:\/\/[^/]+/, ''));
+    if (String(url).includes('/cosmos/auth/v1beta1/accounts/')) return new Response(JSON.stringify({ account: { account_number: '1', sequence: '0' } }));
+    signals.push(init.signal instanceof AbortSignal);
+    return new Response('{}', { status: 503 });
+  };
+  const messages = [postRollupDataMsg({ rollupId: 'veil-test', poster: account.cosmos, data: Uint8Array.of(1, 2, 3) })];
+  const err = await within(1000, broadcast(account, messages, 'pay', { rpcWaitMs: 1000 }).catch((e) => e));
+  assert.match(String(err?.message), /cannot ask .* applied/, String(err));
+  assert.deepEqual(signals, [true], 'the applied_plan read is bounded by an abort signal');
+  assert.equal(calls.sent.length, 0);
 });
