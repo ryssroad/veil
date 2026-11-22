@@ -701,6 +701,7 @@
         </div>
       </section>
       <div class="banner" id="banner" role="status" hidden></div>
+      <div class="banner" id="recording-warning" role="status" hidden></div>
       <div class="columns">
         <section class="panel payer">
           <header class="panelhead">
@@ -1236,6 +1237,8 @@
             kv('Address', short(s.auditor.address)) + kv('Key fingerprint', short(s.auditor.fingerprint));
           $('signing').textContent = s.signing ? '' : 'Read-only session · operator signing is off.';
           $('mark').hidden = $('rec').hidden = !s.recording;
+          $('recording-warning').textContent = s.recordingError ?? '';
+          $('recording-warning').hidden = !s.recordingError;
           const b = s.batches.at(-1);
           $('metrics').innerHTML =
             '<span class="small"><code>' +

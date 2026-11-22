@@ -82,10 +82,11 @@ export function batchDeadline(batch, windowSecs) {
  */
 export function startPolling({ read, measuring, settling = () => false, watching, recording, everyMs = 1000 }) {
   let tick = 0;
-  if (watching || recording) void read();
+  const isRecording = typeof recording === 'function' ? recording : () => recording;
+  if (watching || isRecording()) void read();
   return setInterval(() => {
     tick += 1;
-    if (measuring() || ((watching || recording || settling()) && tick % 3 === 0)) void read();
+    if (measuring() || ((watching || isRecording() || settling()) && tick % 3 === 0)) void read();
   }, everyMs);
 }
 

@@ -18,14 +18,33 @@ if (args.length && !(args.length === 2 && args[0] === '--record' && /^[\w-]{1,60
 const started = new Date().toISOString();
 const session = args.length && 'video/sessions/' + started.replace(/[:.]/g, '-') + '-' + args[1] + '.jsonl';
 const encode = v => JSON.stringify(v, (_, x) => typeof x === 'bigint' ? String(x) : x);
-function record(kind, data = {}) {
-  if (session) appendFileSync(session, encode({ t: Date.now(), type: kind, kind, ...data }) + '\n');
+let recording = Boolean(session), recordingError, recordingTimer;
+function stopRecording(err) {
+  recording = false;
+  recordingError = 'Demo recording stopped. Restart Desk to start a new recording.';
+  clearInterval(recordingTimer);
+  console.error(recordingError, err.message);
 }
-if (session) {
-  mkdirSync('video/sessions', { recursive: true, mode: 0o700 });
-  writeFileSync(session, '', { flag: 'wx', mode: 0o600 });
-  record('meta', { page: 'desk', started, name: args[1], chainId, rollupId });
-  setInterval(() => record('tick', { now: Math.floor(Date.now() / 1000) }), 1000).unref();
+function record(kind, data = {}) {
+  if (!recording) return false;
+  try {
+    appendFileSync(session, encode({ t: Date.now(), type: kind, kind, ...data }) + '\n');
+    return true;
+  } catch (err) {
+    stopRecording(err);
+    return false;
+  }
+}
+if (recording) {
+  try {
+    mkdirSync('video/sessions', { recursive: true, mode: 0o700 });
+    writeFileSync(session, '', { flag: 'wx', mode: 0o600 });
+    if (record('meta', { page: 'desk', started, name: args[1], chainId, rollupId })) {
+      recordingTimer = setInterval(() => record('tick', { now: Math.floor(Date.now() / 1000) }), 1000).unref();
+    }
+  } catch (err) {
+    stopRecording(err);
+  }
 }
 let busy = null, loading, lastRecord, cached, lastRead = 0;
 async function state() {
@@ -34,19 +53,20 @@ async function state() {
     loading ??= snapshot().then(s => { cached = s; lastRead = Date.now(); }).finally(() => { loading = undefined; });
     await loading;
   }
-  const result = { ...cached, busy, recording: Boolean(session) };
-  if (session) {
+  const result = { ...cached, busy, recording, recordingError };
+  if (recording) {
     // The watcher's heartbeat alone is not a new scene.
     const serial = encode({ ...result, watch: { ...result.watch, checkedAt: 0 } });
-    if (serial !== lastRecord) { record('state', { state: result }); lastRecord = serial; }
+    if (serial !== lastRecord && record('state', { state: result })) lastRecord = serial;
   }
-  return result;
+  return { ...result, recording, recordingError };
 }
 class InputError extends Error {}
+class RecordingError extends Error {}
 async function action(body, clickAt) {
   if (body.action === 'mark') {
-    if (!session || typeof body.label !== 'string' || !body.label.trim() || body.label.length > 100) throw new InputError('Enter a scene label (1–100 characters).');
-    record('mark', { label: body.label.trim() });
+    if (typeof body.label !== 'string' || !body.label.trim() || body.label.length > 100) throw new InputError('Enter a scene label (1–100 characters).');
+    if (!record('mark', { label: body.label.trim() })) throw new RecordingError('Scene was not saved. Demo recording is unavailable.');
     return { message: 'Scene marked' };
   }
   if (!['pay', 'top-up', 'batch'].includes(body.action)) throw new InputError('Unknown action.');
@@ -120,15 +140,17 @@ createServer(async (req, res) => {
     if (busy) return send(409, { error: 'An action is in progress.' });
     if (!['pay', 'top-up', 'batch', 'mark'].includes(body.action)) throw new InputError('Unknown action.');
     busy = body.action;
-    record('action-start', { action: busy });
     // The readers read every block from the moment Pay arrived, independently of the broadcast.
     const endPayment = body.action === 'pay' ? beginPayment(clickAt) : () => {};
     try {
+      record('action-start', { action: busy });
       const result = await action(body, clickAt);
       record('action-end', { action: busy, result });
       send(200, result);
     } catch (err) {
-      const { status, result } = actionFailure(err, { input: err instanceof InputError });
+      const { status, result } = err instanceof RecordingError
+        ? { status: 503, result: { error: err.message } }
+        : actionFailure(err, { input: err instanceof InputError });
       record('action-end', { action: busy, result });
       send(status, result);
     } finally { endPayment(); busy = null; lastRead = 0; }
@@ -136,7 +158,7 @@ createServer(async (req, res) => {
     send(err instanceof InputError ? 400 : 503, { error: err instanceof InputError ? err.message : 'Unable to read Diana or the local reader files. Retry to refresh.' });
   }
 }).listen(8788, '127.0.0.1', () => {
-  console.log('Veil Desk at ' + origin + (session ? ' · recording ' + session : ''));
+  console.log('Veil Desk at ' + origin + (recording ? ' · recording ' + session : ''));
   if (watching) console.log('Watcher account configured: polling Diana and challenging divergent batches while this server runs.');
-  startPolling({ read: () => state().catch(() => {}), measuring, settling, watching, recording: Boolean(session) }).unref();
+  startPolling({ read: () => state().catch(() => {}), measuring, settling, watching, recording: () => recording }).unref();
 });
