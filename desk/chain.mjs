@@ -90,8 +90,10 @@ export function quickInclusion(transport, { pollMs = 400, submitTimeoutMs = 10_0
       await sleep(Math.min(pollMs, remaining));
       if (pollMs >= remaining) break;
     }
-    throw new TimeoutError(`Transaction with ID ${txId} was submitted but was not yet found on the chain. There was a wait of ${timeoutMs / 1000} seconds.`
-      + (lookupError ? ` Last lookup error: ${String(lookupError?.message ?? lookupError).slice(0, 120)}` : ''), txId);
+    // The lookup error goes in `cause`, never in the message: the SDK reads the message to decide whether to re-sign and resend.
+    const timeout = new TimeoutError(`Transaction with ID ${txId} was submitted but was not yet found on the chain. There was a wait of ${timeoutMs / 1000} seconds.`
+      + (lookupError ? ' The last lookup failed (see cause).' : ''), txId);
+    throw lookupError ? Object.assign(timeout, { cause: lookupError }) : timeout;
   };
   return transport;
 }

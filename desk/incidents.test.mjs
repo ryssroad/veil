@@ -381,7 +381,8 @@ test('a lookup that fails after the node accepted the transaction does not lose 
     { pollMs: 400, now: () => clock, sleep: async (ms) => { clock += ms; } });
   const err = await down.broadcastTx(Uint8Array.of(1), 2000).catch((e) => e);
   assert.ok(err instanceof TimeoutError);
-  assert.match(err.message, /Last lookup error: HTTP 503/);
+  assert.equal(err.cause?.message, 'HTTP 503', 'the last lookup error is kept for diagnosis');
+  assert.doesNotMatch(err.message, /HTTP 503/, 'but not in the message, which the SDK reads to decide on a resend');
   assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [H, null]);
 });
 
@@ -610,4 +611,15 @@ test('a Diana RPC that connects but never answers the chain id does not hold the
   assert.ok(err instanceof Error, String(err));
   assert.deepEqual(asked, ['status', 'status'], 'connected, then stopped waiting for the chain id; nothing signed');
   assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [null, null]);
+});
+
+test('through the real SDK signer, a lookup that keeps failing after the node accepted the transaction leaves the user its hash and sends it once', async () => {
+  const { account, signer } = await realSigner();
+  // The node accepts it; every lookup fails with a text that echoes the hybrid sign-bytes rejection.
+  const node = rpcNode(async (tx) => txHashOf(tx), async () => { throw new Error('rpc: ' + HYBRID_SIGN_BYTES_REJECTION_LOG); });
+  const transport = withDeadline(quickInclusion(node, { pollMs: 10 }), 100);
+  const err = await within(2000, signer.signAndBroadcast(transport, signParams(account)).catch((e) => e));
+  assert.ok(err instanceof TimeoutError, String(err));
+  assert.equal(node.sent.length, 1, 'an accepted transaction is never re-signed and sent again');
+  assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [txHashOf(node.sent[0]), null]);
 });
