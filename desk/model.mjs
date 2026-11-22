@@ -93,13 +93,18 @@ export function startPolling({ read, measuring, settling = () => false, watching
 /**
  * What Desk answers when an action fails. A transaction the node accepted is
  * always reported with its hash: rejected with its code, or submitted with an
- * unknown result, so the user checks the inbox instead of paying again.
+ * unknown result, so the user checks the inbox instead of paying again. One
+ * the node never confirmed receiving says so, with its hash all the same.
  */
 export function actionFailure(err, { input = false } = {}) {
   if (input) return { status: 400, result: { error: err.message } };
   const failed = broadcastFailure(err);
   if (failed.hash && failed.code != null) {
     return { status: 502, result: { hash: failed.hash, code: failed.code, height: failed.height, error: 'Transaction rejected.' } };
+  }
+  if (failed.hash && err?.unconfirmed) {
+    return { status: 502, result: { hash: failed.hash,
+      error: 'Transaction sent, but the node did not confirm receiving it; its result is not known yet. Check the inbox before retrying.' } };
   }
   if (failed.hash) {
     return { status: 502, result: { hash: failed.hash, error: 'Transaction submitted; its result is not known yet. Check the inbox before retrying.' } };

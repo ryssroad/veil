@@ -9,7 +9,7 @@ import {
   anchorSignBytesForBatch, buildSettlementReceipt, verifySettlementReceipt, isRestNotFound, challengeBatchMsg,
 } from '@qorechain/rdk';
 import { deriveUnifiedAccount, EthNativeSigner, pqcSign } from '@qorechain/sdk';
-import { StargateClient, TimeoutError } from '@cosmjs/stargate';
+import { StargateClient, TimeoutError, BroadcastTxError } from '@cosmjs/stargate';
 import {
   env, chainId, rollupId, hex, sha256, kemFingerprint, kemKeyFromRegistry, createInvoicePayment,
   openInvoice, discoverReaderKeys, replayExecutions, coPostedEnvelope, coPostedInTx, InvoiceImporter,
@@ -60,10 +60,16 @@ export const payeeKeys = (dir) => ({
  * that fails is tried again, and the only error this can throw from then on is
  * the timeout, which carries the hash. The deadline also ends a lookup that is
  * still pending, so a node that stops answering cannot hold the caller.
+ *
+ * The hand-over itself has its own deadline, `submitTimeoutMs`, never longer
+ * than the caller's timeout (see `submit`). `handedAt` is cleared at the start
+ * of every call and set only when the node confirms this call's transaction.
  */
-export function quickInclusion(transport, { pollMs = 400, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+export function quickInclusion(transport, { pollMs = 400, submitTimeoutMs = 10_000, now = Date.now,
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   transport.broadcastTx = async (tx, timeoutMs = 60_000) => {
-    const txId = await transport.broadcastTxSync(tx);
+    transport.handedAt = undefined;
+    const txId = await submit(transport, tx, Math.min(submitTimeoutMs, timeoutMs));
     transport.handedAt = now();
     const deadline = transport.handedAt + timeoutMs;
     let lookupError;
@@ -90,10 +96,56 @@ export function quickInclusion(transport, { pollMs = 400, now = Date.now, sleep 
   return transport;
 }
 
-export async function broadcast(account, messages, name, { mode = 'hybrid', registry = createRdkRegistry() } = {}) {
-  const transport = quickInclusion(await StargateClient.connect(client.network.endpoints.rpc));
+/**
+ * Hand the signed bytes to the node, for at most `limitMs`. Resolves to the
+ * node's hash once it accepted them. A CheckTx refusal (`BroadcastTxError`) is
+ * definitive and passes through. Anything else (no answer in time, a broken
+ * connection) is uncertain: the bytes may have reached the mempool. It becomes
+ * a TimeoutError carrying the hash computed here from the signed bytes, which
+ * is what the node would have returned, so the caller checks before sending
+ * again; it is marked `unconfirmed`. Its message is fixed, never the cause's
+ * text, so the SDK's sign-bytes retry cannot mistake it for a refusal and
+ * resend. A late answer is ignored.
+ */
+function submit(transport, tx, limitMs) {
+  const localId = hex(sha256(tx)).toUpperCase();
+  const uncertain = (why) => new TimeoutError(`Transaction with ID ${localId} was sent but the node did not confirm `
+    + `receiving it (${why}). It may still be included.`, localId);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(Object.assign(uncertain(`no answer within ${limitMs / 1000} seconds`), { unconfirmed: true })), limitMs);
+    Promise.resolve().then(() => transport.broadcastTxSync(tx)).then(resolve, (err) => {
+      if (err instanceof BroadcastTxError) reject(err);
+      else reject(Object.assign(uncertain('the submission failed'), { unconfirmed: true, cause: err }));
+    }).finally(() => clearTimeout(timer));
+  });
+}
+
+/** Connect to the Diana RPC and check its chain id, for at most `limitMs`. Nothing is signed yet. */
+async function connectRpc(limitMs) {
+  const connecting = (async () => {
+    const rpc = await StargateClient.connect(client.network.endpoints.rpc);
+    try {
+      assert.equal(await rpc.getChainId(), chainId);
+      return rpc;
+    } catch (err) { rpc.disconnect(); throw err; }
+  })();
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Diana RPC did not answer within ${limitMs / 1000} seconds`)), limitMs);
+  });
   try {
-    assert.equal(await transport.getChainId(), chainId);
+    return await Promise.race([connecting, expired]);
+  } catch (err) {
+    connecting.then((rpc) => rpc.disconnect(), () => {});   // a connection that completes late is closed
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function broadcast(account, messages, name, { mode = 'hybrid', registry = createRdkRegistry(), rpcWaitMs = 10_000 } = {}) {
+  const transport = quickInclusion(await connectRpc(rpcWaitMs));
+  try {
     const { account: auth } = await getJson('/cosmos/auth/v1beta1/accounts/' + account.cosmos);
     const base = auth.base_account ?? auth;
     const signer = new EthNativeSigner(account, { rest, signMode: mode, ...(registry ? { registry } : {}) });
