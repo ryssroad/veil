@@ -2,9 +2,13 @@
 // delivery with retries, terminal chain outcomes, third-party verdicts.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TimeoutError, BroadcastTxError } from '@cosmjs/stargate';
+import { TimeoutError, BroadcastTxError, StargateClient } from '@cosmjs/stargate';
 import { createIncidentTracker } from './incidents.mjs';
-import { challenge, broadcastFailure, quickInclusion, boundedFetch } from './chain.mjs';
+import { challenge, broadcastFailure, quickInclusion, boundedFetch, broadcast } from './chain.mjs';
+import { actionFailure } from './model.mjs';
+import { deriveUnifiedAccount, EthNativeSigner, generateMnemonic, HYBRID_SIGN_BYTES_REJECTION_LOG, clearSignBytesCache } from '@qorechain/sdk';
+import { createRdkRegistry, postRollupDataMsg } from '@qorechain/rdk';
+import { createHash } from 'node:crypto';
 
 const WINDOW = 3600;
 const forged = (over = {}) => ({ index: 2, status: 'submitted', start: 4, end: 5, stateRoot: 'ab'.repeat(32), verdict: 'diverged',
@@ -377,7 +381,8 @@ test('a lookup that fails after the node accepted the transaction does not lose 
     { pollMs: 400, now: () => clock, sleep: async (ms) => { clock += ms; } });
   const err = await down.broadcastTx(Uint8Array.of(1), 2000).catch((e) => e);
   assert.ok(err instanceof TimeoutError);
-  assert.match(err.message, /Last lookup error: HTTP 503/);
+  assert.equal(err.cause?.message, 'HTTP 503', 'the last lookup error is kept for diagnosis');
+  assert.doesNotMatch(err.message, /HTTP 503/, 'but not in the message, which the SDK reads to decide on a resend');
   assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [H, null]);
 });
 
@@ -443,4 +448,279 @@ test('a REST read that never answers is abandoned after its time limit', async (
   assert.equal(err.name, 'TimeoutError');
   assert.ok(Date.now() - started < 1000);
   assert.deepEqual(seen, { url: 'https://diana.invalid/x', accept: 'application/json' });
+});
+
+// ------------------------------------------- review finding 1: the submission itself
+
+// sha256(01 02 03), derived outside this code.
+const SIGNED_123_HASH = '039058C6F2C0CB492C533B0A4D14EF77CC0F78ABCCCED5287D84A1A2011CFB81';
+// The test's own watchdog: a call that hangs fails with this message instead of stalling the run.
+const within = (ms, promise) => Promise.race([promise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error(`still pending after ${ms} ms`)), ms))]);
+const tick = () => new Promise((r) => setImmediate(r));
+
+test('a submission the node never answers releases the caller at the submission deadline, with the hash of the signed bytes', async () => {
+  let broadcasts = 0;
+  let lookups = 0;
+  const transport = quickInclusion({
+    broadcastTxSync: () => { broadcasts += 1; return new Promise(() => {}); },
+    getTx: async () => { lookups += 1; return null; },
+  }, { submitTimeoutMs: 30 });
+  const err = await within(1000, transport.broadcastTx(Uint8Array.of(1, 2, 3), 60_000).catch((e) => e));
+  assert.ok(err instanceof TimeoutError, String(err));
+  assert.equal(err.txId, SIGNED_123_HASH);
+  assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [SIGNED_123_HASH, null]);
+  assert.equal(transport.handedAt, undefined, 'the node never confirmed it');
+  assert.deepEqual([broadcasts, lookups], [1, 0], 'sent once, and no inclusion lookup for an unconfirmed hash');
+});
+
+test('the submission deadline never outlasts the caller’s own timeout', async () => {
+  const transport = quickInclusion({ broadcastTxSync: () => new Promise(() => {}), getTx: async () => null });
+  const err = await within(1000, transport.broadcastTx(Uint8Array.of(1, 2, 3), 30).catch((e) => e));
+  assert.ok(err instanceof TimeoutError, String(err));
+  assert.equal(err.txId, SIGNED_123_HASH);
+});
+
+test('a connection that breaks during submission is uncertain: the hash is kept and Desk says to check before retrying', async () => {
+  const broken = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+  let broadcasts = 0;
+  const transport = quickInclusion({ broadcastTxSync: async () => { broadcasts += 1; throw broken; }, getTx: async () => null });
+  const err = await within(1000, transport.broadcastTx(Uint8Array.of(1, 2, 3)).catch((e) => e));
+  assert.ok(err instanceof TimeoutError, String(err));
+  assert.equal(err.txId, SIGNED_123_HASH);
+  assert.equal(err.cause, broken, 'the network error is kept for diagnosis');
+  assert.equal(transport.handedAt, undefined);
+  assert.equal(broadcasts, 1);
+  assert.deepEqual(actionFailure(err), { status: 502, result: { hash: SIGNED_123_HASH,
+    error: 'Transaction sent, but the node did not confirm receiving it; its result is not known yet. Check the inbox before retrying.' } });
+});
+
+test('a CheckTx refusal stays a definitive refusal, not an uncertain submission', async () => {
+  const refused = new BroadcastTxError(5, 'sdk', 'insufficient funds');
+  const transport = quickInclusion({ broadcastTxSync: async () => { throw refused; }, getTx: async () => assert.fail('nothing to look up') });
+  const err = await within(1000, transport.broadcastTx(Uint8Array.of(1, 2, 3)).catch((e) => e));
+  assert.equal(err, refused);
+  assert.equal(broadcastFailure(err).hash, null, 'nothing reached the mempool');
+  assert.equal(transport.handedAt, undefined);
+});
+
+test('an answer that arrives after the submission deadline does not change the finished call', async () => {
+  let answer;
+  let lookups = 0;
+  const transport = quickInclusion({
+    broadcastTxSync: () => new Promise((resolve) => { answer = resolve; }),
+    getTx: async () => { lookups += 1; return { code: 0, height: 9 }; },
+  }, { submitTimeoutMs: 30 });
+  const err = await within(1000, transport.broadcastTx(Uint8Array.of(1, 2, 3), 60_000).catch((e) => e));
+  assert.ok(err instanceof TimeoutError, String(err));
+  answer(SIGNED_123_HASH);           // the node answers late
+  await tick(); await tick();
+  assert.equal(transport.handedAt, undefined, 'a late answer is not a confirmed hand-over of the finished call');
+  assert.equal(lookups, 0, 'and starts no lookup behind the caller’s back');
+});
+
+test('an unconfirmed submission is not credited with an earlier acceptance on the same transport', async () => {
+  // The SDK re-signs and sends again on the same transport after a hybrid sign-bytes rejection at delivery.
+  let call = 0;
+  let clock = 5000;
+  const transport = quickInclusion({
+    broadcastTxSync: () => { call += 1; return call === 1 ? Promise.resolve('AB'.repeat(32)) : new Promise(() => {}); },
+    getTx: async () => ({ code: 21, codespace: 'pqc', height: 7 }),
+  }, { submitTimeoutMs: 30, now: () => clock });
+  const first = await within(1000, transport.broadcastTx(Uint8Array.of(9)));
+  assert.equal(first.code, 21);
+  assert.equal(transport.handedAt, 5000);
+  clock = 6000;
+  const err = await within(1000, transport.broadcastTx(Uint8Array.of(1, 2, 3)).catch((e) => e));
+  assert.equal(err.txId, SIGNED_123_HASH);
+  assert.equal(transport.handedAt, undefined, 'the first transaction’s acceptance must not be reported for the second');
+});
+
+// The SDK signer Desk uses, offline: a chain id outside the legacy list signs v2 without asking REST.
+let signerReady;
+const realSigner = () => signerReady ??= (async () => {
+  const account = await deriveUnifiedAccount(generateMnemonic());
+  return { account, signer: new EthNativeSigner(account, { rest: 'http://rest.invalid', signMode: 'hybrid', registry: createRdkRegistry() }) };
+})();
+const signParams = (account) => ({ chainId: 'veil-test', accountNumber: 1n, sequence: 0n,
+  messages: [postRollupDataMsg({ rollupId: 'veil-test', poster: account.cosmos, data: Uint8Array.of(1, 2, 3) })],
+  fee: { amount: [{ denom: 'uqor', amount: '270000' }], gas: '1800000' } });
+/** A node whose answer to the n-th submission is `answer(tx, n)`; it records what it was sent. */
+const rpcNode = (answer, getTx = async () => null) => {
+  const sent = [];
+  return { sent, broadcastTxSync: (tx) => { sent.push(tx); return answer(tx, sent.length); }, getTx };
+};
+/** The signer calls `broadcastTx(bytes)` with CosmJS's 60 s default; the tests shorten it. */
+const withDeadline = (transport, ms) => { const send = transport.broadcastTx; transport.broadcastTx = (tx) => send(tx, ms); return transport; };
+const txHashOf = (bytes) => createHash('sha256').update(bytes).digest('hex').toUpperCase();
+
+test('through the real SDK signer, an unconfirmed submission is sent once and leaves the user its hash', async () => {
+  const { account, signer } = await realSigner();
+  const answers = {
+    'no answer': () => new Promise(() => {}),
+    'connection dropped': async () => { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }); },
+    // A transport error whose text echoes the hybrid sign-bytes rejection: the SDK re-signs and resends on that text.
+    'error echoing the rejection log': async () => { throw new Error('upstream: ' + HYBRID_SIGN_BYTES_REJECTION_LOG); },
+    'late answer': () => new Promise((r) => setTimeout(() => r('AB'.repeat(32)), 80)),
+  };
+  for (const [name, answer] of Object.entries(answers)) {
+    const node = rpcNode(answer);
+    const err = await within(1000, signer.signAndBroadcast(withDeadline(quickInclusion(node, { submitTimeoutMs: 30 }), 60_000),
+      signParams(account)).catch((e) => e));
+    await new Promise((r) => setTimeout(r, 120));
+    assert.equal(node.sent.length, 1, name + ': sent exactly once');
+    assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [txHashOf(node.sent[0]), null], name);
+  }
+  // The harness does see a resend when there is one: the SDK signs again after a hybrid sign-bytes refusal at CheckTx.
+  const refusing = rpcNode(async (tx, n) => {
+    if (n === 1) throw new BroadcastTxError(21, 'pqc', HYBRID_SIGN_BYTES_REJECTION_LOG);
+    return txHashOf(tx);
+  }, async () => ({ code: 0, height: 12, txIndex: 0, events: [], rawLog: '' }));
+  await within(1000, signer.signAndBroadcast(withDeadline(quickInclusion(refusing, { pollMs: 1 }), 2000), signParams(account)));
+  assert.equal(refusing.sent.length, 2);
+});
+
+test('a Diana RPC that never answers the connection does not hold the action, and nothing is signed or sent', async (t) => {
+  const real = globalThis.fetch;
+  t.after(() => { globalThis.fetch = real; });
+  const asked = [];
+  globalThis.fetch = (url, init) => { asked.push(JSON.parse(init.body).method); return new Promise(() => {}); };
+  const err = await within(1000, broadcast({ cosmos: 'qor1operator' }, [], 'pay', { rpcWaitMs: 30 }).catch((e) => e));
+  assert.ok(err instanceof Error, String(err));
+  assert.deepEqual(asked, ['status'], 'stopped while connecting, before anything was signed');
+  assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [null, null], 'nothing to look up');
+});
+
+test('a Diana RPC that connects but never answers the chain id does not hold the action either', async (t) => {
+  const real = globalThis.fetch;
+  t.after(() => { globalThis.fetch = real; });
+  // A CometBFT 0.37 status, as the node sends it; the client keeps the 0.37 connection it opened.
+  const status = { node_info: { protocol_version: { p2p: '8', block: '11', app: '0' }, id: 'ab'.repeat(20), listen_addr: 'tcp://0.0.0.0:26656',
+    network: 'qorechain-diana', version: '0.37.4', channels: '40', moniker: 'diana', other: { tx_index: 'on', rpc_address: 'tcp://0.0.0.0:26657' } },
+  sync_info: { latest_block_hash: 'AB'.repeat(32), latest_app_hash: 'CD'.repeat(32), latest_block_height: '100',
+    latest_block_time: '2026-11-22T10:00:00.000000000Z', catching_up: false },
+  validator_info: { address: 'EF'.repeat(20), pub_key: { type: 'tendermint/PubKeyEd25519', value: Buffer.alloc(32, 1).toString('base64') }, voting_power: '0' } };
+  const asked = [];
+  globalThis.fetch = async (url, init) => {
+    const { id, method } = JSON.parse(init.body);
+    asked.push(method);
+    if (asked.length > 1) return new Promise(() => {});      // the chain id is never answered
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id, result: status }), { headers: { 'content-type': 'application/json' } });
+  };
+  const err = await within(1000, broadcast({ cosmos: 'qor1operator' }, [], 'pay', { rpcWaitMs: 30 }).catch((e) => e));
+  assert.ok(err instanceof Error, String(err));
+  assert.deepEqual(asked, ['status', 'status'], 'connected, then stopped waiting for the chain id; nothing signed');
+  assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [null, null]);
+});
+
+test('through the real SDK signer, a lookup that keeps failing after the node accepted the transaction leaves the user its hash and sends it once', async () => {
+  const { account, signer } = await realSigner();
+  // The node accepts it; every lookup fails with a text that echoes the hybrid sign-bytes rejection.
+  const node = rpcNode(async (tx) => txHashOf(tx), async () => { throw new Error('rpc: ' + HYBRID_SIGN_BYTES_REJECTION_LOG); });
+  const transport = withDeadline(quickInclusion(node, { pollMs: 10 }), 100);
+  const err = await within(2000, signer.signAndBroadcast(transport, signParams(account)).catch((e) => e));
+  assert.ok(err instanceof TimeoutError, String(err));
+  assert.equal(node.sent.length, 1, 'an accepted transaction is never re-signed and sent again');
+  assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [txHashOf(node.sent[0]), null]);
+});
+
+// A controlled RPC client in place of StargateClient.connect: when it connects, and whether it answers the chain id.
+// Nothing past the connection may reach the network: any request is recorded in `calls.network` and fails.
+const controlledRpc = (t, { connectAfterMs = 0, chainIdAnswers = true, chain = 'never-checked' } = {}) => {
+  const real = { connect: StargateClient.connect, fetch: globalThis.fetch };
+  t.after(() => { StargateClient.connect = real.connect; globalThis.fetch = real.fetch; });
+  const calls = { getChainId: 0, disconnect: 0, network: [] };
+  const sent = [];
+  globalThis.fetch = async (url) => { calls.network.push(String(url)); throw new Error('no network in this test'); };
+  const rpc = {
+    getChainId: () => { calls.getChainId += 1; return chainIdAnswers ? Promise.resolve(chain) : new Promise(() => {}); },
+    disconnect: () => { calls.disconnect += 1; },
+    broadcastTxSync: async (tx) => { sent.push(tx); return txHashOf(tx); },
+  };
+  Object.defineProperty(calls, 'sent', { value: sent, enumerable: false });
+  StargateClient.connect = () => new Promise((r) => setTimeout(() => r(rpc), connectAfterMs));
+  return calls;
+};
+
+test('a connection that completes after the RPC time limit is closed at once, and no chain id is asked of it', async (t) => {
+  const calls = controlledRpc(t, { connectAfterMs: 60 });
+  const err = await within(1000, broadcast({ cosmos: 'qor1operator' }, [], 'pay', { rpcWaitMs: 20 }).catch((e) => e));
+  assert.match(String(err?.message), /did not answer within/);
+  await new Promise((r) => setTimeout(r, 120));      // the connection completes late
+  assert.deepEqual(calls, { getChainId: 0, disconnect: 1, network: [] });
+});
+
+test('a connection whose chain id is still pending at the RPC time limit is closed at the limit', async (t) => {
+  const calls = controlledRpc(t, { chainIdAnswers: false });
+  const err = await within(1000, broadcast({ cosmos: 'qor1operator' }, [], 'pay', { rpcWaitMs: 20 }).catch((e) => e));
+  assert.match(String(err?.message), /did not answer within/);
+  assert.deepEqual(calls, { getChainId: 1, disconnect: 1, network: [] }, 'closed when the caller was released');
+});
+
+test('a node on another chain is refused before anything is signed, and its connection is closed', async (t) => {
+  const calls = controlledRpc(t);                    // answers a chain id that is not Diana's
+  const err = await within(1000, broadcast({ cosmos: 'qor1operator' }, [], 'pay', { rpcWaitMs: 1000 }).catch((e) => e));
+  assert.match(String(err?.message), /never-checked/, 'refused for its chain id');
+  assert.deepEqual(calls, { getChainId: 1, disconnect: 1, network: [] }, 'and nothing after it was asked');
+});
+
+test('the signer’s own REST read before signing is bounded too: nothing is signed or sent, and there is no hash', async (t) => {
+  clearSignBytesCache();
+  const calls = controlledRpc(t, { chain: 'qorechain-diana' });
+  const { account } = await realSigner();
+  // Diana is a legacy sign-bytes chain: before signing, the SDK asks REST whether the v2 upgrade is applied. That read never answers.
+  globalThis.fetch = (url, init = {}) => {
+    calls.network.push(String(url).replace(/^https?:\/\/[^/]+/, ''));
+    if (String(url).includes('/cosmos/auth/v1beta1/accounts/')) {
+      return Promise.resolve(new Response(JSON.stringify({ account: { account_number: '1', sequence: '0' } })));
+    }
+    return new Promise((_, reject) => init.signal?.addEventListener('abort', () => reject(init.signal.reason)));
+  };
+  const messages = [postRollupDataMsg({ rollupId: 'veil-test', poster: account.cosmos, data: Uint8Array.of(1, 2, 3) })];
+  const err = await within(1000, broadcast(account, messages, 'pay', { rpcWaitMs: 1000, signerFetch: boundedFetch(30) }).catch((e) => e));
+  assert.match(String(err?.message), /cannot ask .* applied/, String(err));
+  assert.ok(calls.network.some((u) => u.includes('/cosmos/upgrade/v1beta1/applied_plan/')), calls.network.join(', '));
+  assert.equal(calls.sent.length, 0, 'nothing was signed or sent');
+  assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [null, null], 'no hash to look up');
+});
+
+test('a refusal or a failure that arrives after the submission deadline is handled and changes nothing', async (t) => {
+  const unhandled = [];
+  const onUnhandled = (reason) => unhandled.push(reason);
+  process.on('unhandledRejection', onUnhandled);
+  t.after(() => process.off('unhandledRejection', onUnhandled));
+  const late = { 'CheckTx refusal': new BroadcastTxError(13, 'sdk', 'insufficient fee'),
+    'connection drop': Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }) };
+  for (const [name, lateError] of Object.entries(late)) {
+    let fail;
+    const transport = quickInclusion({ broadcastTxSync: () => new Promise((_, reject) => { fail = reject; }), getTx: async () => null },
+      { submitTimeoutMs: 30 });
+    const err = await within(1000, transport.broadcastTx(Uint8Array.of(1, 2, 3), 60_000).catch((e) => e));
+    const recorded = { txId: err.txId, message: err.message, cause: err.cause, unconfirmed: err.unconfirmed };
+    assert.deepEqual([recorded.txId, recorded.unconfirmed], [SIGNED_123_HASH, true], name);
+    fail(lateError);                   // the node's answer comes after the caller was released
+    await tick(); await tick();
+    assert.deepEqual({ txId: err.txId, message: err.message, cause: err.cause, unconfirmed: err.unconfirmed }, recorded, name);
+    assert.equal(transport.handedAt, undefined, name);
+  }
+  await new Promise((r) => setTimeout(r, 20));   // unhandled rejections are reported after the tick
+  assert.deepEqual(unhandled.map(String), [], 'a late failure is not left unhandled');
+});
+
+test('by default the signer’s REST reads carry Desk’s time limit', async (t) => {
+  clearSignBytesCache();
+  const calls = controlledRpc(t, { chain: 'qorechain-diana' });
+  const { account } = await realSigner();
+  const signals = [];
+  globalThis.fetch = async (url, init = {}) => {
+    calls.network.push(String(url).replace(/^https?:\/\/[^/]+/, ''));
+    if (String(url).includes('/cosmos/auth/v1beta1/accounts/')) return new Response(JSON.stringify({ account: { account_number: '1', sequence: '0' } }));
+    signals.push(init.signal instanceof AbortSignal);
+    return new Response('{}', { status: 503 });
+  };
+  const messages = [postRollupDataMsg({ rollupId: 'veil-test', poster: account.cosmos, data: Uint8Array.of(1, 2, 3) })];
+  const err = await within(1000, broadcast(account, messages, 'pay', { rpcWaitMs: 1000 }).catch((e) => e));
+  assert.match(String(err?.message), /cannot ask .* applied/, String(err));
+  assert.deepEqual(signals, [true], 'the applied_plan read is bounded by an abort signal');
+  assert.equal(calls.sent.length, 0);
 });
