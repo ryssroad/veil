@@ -122,27 +122,36 @@ function submit(transport, tx, limitMs) {
   });
 }
 
-/** Connect to the Diana RPC and check its chain id, for at most `limitMs`. Nothing is signed yet. */
-async function connectRpc(limitMs) {
-  const connecting = (async () => {
-    const rpc = await StargateClient.connect(client.network.endpoints.rpc);
-    try {
-      assert.equal(await rpc.getChainId(), chainId);
-      return rpc;
-    } catch (err) { rpc.disconnect(); throw err; }
-  })();
-  let timer;
-  const expired = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Diana RPC did not answer within ${limitMs / 1000} seconds`)), limitMs);
+/**
+ * Connect to the Diana RPC and check its chain id, for at most `limitMs`.
+ * Nothing is signed yet. At the limit a client already connected is closed,
+ * once; one that connects after the limit is closed at once and asked nothing.
+ */
+function connectRpc(limitMs) {
+  return new Promise((resolve, reject) => {
+    let expired = false;
+    let rpc;
+    const close = () => rpc?.disconnect();
+    const timer = setTimeout(() => {
+      expired = true;
+      close();
+      reject(new Error(`Diana RPC did not answer within ${limitMs / 1000} seconds`));
+    }, limitMs);
+    (async () => {
+      const conn = await StargateClient.connect(client.network.endpoints.rpc);
+      if (expired) { conn.disconnect(); return; }
+      rpc = conn;
+      assert.equal(await conn.getChainId(), chainId);
+      if (expired) return;                  // closed at the limit already
+      clearTimeout(timer);
+      resolve(conn);
+    })().catch((err) => {
+      if (expired) return;
+      clearTimeout(timer);
+      close();
+      reject(err);
+    });
   });
-  try {
-    return await Promise.race([connecting, expired]);
-  } catch (err) {
-    connecting.then((rpc) => rpc.disconnect(), () => {});   // a connection that completes late is closed
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 export async function broadcast(account, messages, name, { mode = 'hybrid', registry = createRdkRegistry(), rpcWaitMs = 10_000 } = {}) {

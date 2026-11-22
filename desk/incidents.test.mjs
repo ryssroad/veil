@@ -2,7 +2,7 @@
 // delivery with retries, terminal chain outcomes, third-party verdicts.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TimeoutError, BroadcastTxError } from '@cosmjs/stargate';
+import { TimeoutError, BroadcastTxError, StargateClient } from '@cosmjs/stargate';
 import { createIncidentTracker } from './incidents.mjs';
 import { challenge, broadcastFailure, quickInclusion, boundedFetch, broadcast } from './chain.mjs';
 import { actionFailure } from './model.mjs';
@@ -622,4 +622,41 @@ test('through the real SDK signer, a lookup that keeps failing after the node ac
   assert.ok(err instanceof TimeoutError, String(err));
   assert.equal(node.sent.length, 1, 'an accepted transaction is never re-signed and sent again');
   assert.deepEqual([broadcastFailure(err).hash, broadcastFailure(err).code], [txHashOf(node.sent[0]), null]);
+});
+
+// A controlled RPC client in place of StargateClient.connect: when it connects, and whether it answers the chain id.
+// Nothing past the connection may reach the network: any request is recorded in `calls.network` and fails.
+const controlledRpc = (t, { connectAfterMs = 0, chainIdAnswers = true } = {}) => {
+  const real = { connect: StargateClient.connect, fetch: globalThis.fetch };
+  t.after(() => { StargateClient.connect = real.connect; globalThis.fetch = real.fetch; });
+  const calls = { getChainId: 0, disconnect: 0, network: [] };
+  globalThis.fetch = async (url) => { calls.network.push(String(url)); throw new Error('no network in this test'); };
+  const rpc = {
+    getChainId: () => { calls.getChainId += 1; return chainIdAnswers ? Promise.resolve('never-checked') : new Promise(() => {}); },
+    disconnect: () => { calls.disconnect += 1; },
+  };
+  StargateClient.connect = () => new Promise((r) => setTimeout(() => r(rpc), connectAfterMs));
+  return calls;
+};
+
+test('a connection that completes after the RPC time limit is closed at once, and no chain id is asked of it', async (t) => {
+  const calls = controlledRpc(t, { connectAfterMs: 60 });
+  const err = await within(1000, broadcast({ cosmos: 'qor1operator' }, [], 'pay', { rpcWaitMs: 20 }).catch((e) => e));
+  assert.match(String(err?.message), /did not answer within/);
+  await new Promise((r) => setTimeout(r, 120));      // the connection completes late
+  assert.deepEqual(calls, { getChainId: 0, disconnect: 1, network: [] });
+});
+
+test('a connection whose chain id is still pending at the RPC time limit is closed at the limit', async (t) => {
+  const calls = controlledRpc(t, { chainIdAnswers: false });
+  const err = await within(1000, broadcast({ cosmos: 'qor1operator' }, [], 'pay', { rpcWaitMs: 20 }).catch((e) => e));
+  assert.match(String(err?.message), /did not answer within/);
+  assert.deepEqual(calls, { getChainId: 1, disconnect: 1, network: [] }, 'closed when the caller was released');
+});
+
+test('a node on another chain is refused before anything is signed, and its connection is closed', async (t) => {
+  const calls = controlledRpc(t);                    // answers a chain id that is not Diana's
+  const err = await within(1000, broadcast({ cosmos: 'qor1operator' }, [], 'pay', { rpcWaitMs: 1000 }).catch((e) => e));
+  assert.match(String(err?.message), /never-checked/, 'refused for its chain id');
+  assert.deepEqual(calls, { getChainId: 1, disconnect: 1, network: [] }, 'and nothing after it was asked');
 });
